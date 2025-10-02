@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'Camera.dart';
 
 class ApplianceSelectionPage extends StatelessWidget {
   const ApplianceSelectionPage({Key? key}) : super(key: key);
@@ -103,7 +104,10 @@ class ApplianceSelectionPage extends StatelessWidget {
   ) {
     return GestureDetector(
         onTap: () {
-           print('Selected appliance: $title');// Handle appliance selection
+                Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => CameraGalleryPickerPage()),
+      );
       },
       child: Container(
         decoration: BoxDecoration(

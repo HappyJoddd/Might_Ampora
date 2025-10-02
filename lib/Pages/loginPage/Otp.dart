@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:pinput/pinput.dart';
 import 'dart:async';
 import 'package:might_ampora/Pages/OpeningScreen/OpeningScreen1.dart';
+import 'package:might_ampora/Pages/OpeningScreen/EnergyPage.dart';
 
 class OTPpage extends StatefulWidget {
   const OTPpage({Key? key}) : super(key: key);
@@ -64,7 +65,7 @@ class _OTPpageState extends State<OTPpage> {
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (context) => const EnergyStoryPage(),
+          builder: (context) => const EnergyOnboardingPage(),
         ),
       );
     } else {
