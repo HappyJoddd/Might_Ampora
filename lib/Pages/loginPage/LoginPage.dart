@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl_phone_field/intl_phone_field.dart';
+import 'package:might_ampora/Pages/Home/HomeScreen.dart';
 import 'Otp.dart';
 
 class LoginPage extends StatefulWidget {
@@ -277,7 +278,7 @@ class _LoginPageState extends State<LoginPage> {
                       // Navigate to OTP page
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (context) => const OTPpage()),
+                        MaterialPageRoute(builder: (context) => const HomeScreen()),
                       );
                     } : null,
                     style: ElevatedButton.styleFrom(

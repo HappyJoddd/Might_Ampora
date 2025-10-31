@@ -1,3 +1,5 @@
 class RouteName {
-  static const splash = "/", login = "/login";
+  static const splash = "/";
+  static const login = "/login";
+  static const home = "/home";
 }

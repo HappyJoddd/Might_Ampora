@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:might_ampora/Routes/routes.dart';
+import 'package:might_ampora/Routes/routes_name.dart';
 
 void main() {
   runApp(const MyApp());
@@ -15,6 +16,7 @@ class MyApp extends StatelessWidget {
     return GetMaterialApp(
       debugShowCheckedModeBanner: false,
       getPages: AppRoutes.getRoutes(),
+      initialRoute: RouteName.splash,
     );
   }
 }

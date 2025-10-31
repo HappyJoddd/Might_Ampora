@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:pinput/pinput.dart';
 import 'dart:async';
-import 'package:might_ampora/Pages/OpeningScreen/OpeningScreen1.dart';
-import 'package:might_ampora/Pages/OpeningScreen/EnergyPage.dart';
+import 'package:might_ampora/Pages/Scaning_Option/EnergyPage.dart';
 
 class OTPpage extends StatefulWidget {
   const OTPpage({Key? key}) : super(key: key);

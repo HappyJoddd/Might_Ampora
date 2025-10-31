@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:camera/camera.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
+import 'Extradetail.dart';
 
 class CameraGalleryPickerPage extends StatefulWidget {
   const CameraGalleryPickerPage({Key? key}) : super(key: key);
@@ -48,8 +49,16 @@ class _CameraGalleryPickerPageState extends State<CameraGalleryPickerPage> {
     if (_cameraController != null && _cameraController!.value.isInitialized) {
       try {
         final XFile image = await _cameraController!.takePicture();
-        // Return the captured image file
-        Navigator.pop(context, File(image.path));
+        // Navigate to extra details page with image
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ExtraDetailPage(
+              imageFile: File(image.path),
+              applianceName: 'Ceiling Fan', // You can make this dynamic based on detection
+            ),
+          ),
+        );
       } catch (e) {
         print('Error taking picture: $e');
       }
@@ -60,8 +69,16 @@ class _CameraGalleryPickerPageState extends State<CameraGalleryPickerPage> {
     try {
       final XFile? image = await _picker.pickImage(source: ImageSource.gallery);
       if (image != null) {
-        // Return the selected image file
-        Navigator.pop(context, File(image.path));
+        // Navigate to extra details page with image
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ExtraDetailPage(
+              imageFile: File(image.path),
+              applianceName: 'Ceiling Fan', // You can make this dynamic based on detection
+            ),
+          ),
+        );
       }
     } catch (e) {
       print('Error picking from gallery: $e');

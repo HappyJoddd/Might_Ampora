@@ -5,6 +5,7 @@ import 'package:might_ampora/Routes/routes_name.dart';
 import 'package:might_ampora/Pages/Controller/splashcontroller.dart';
 import 'package:might_ampora/Pages/loginPage/LoginPage.dart';
 import 'package:might_ampora/Pages/Controller/LoginPageController.dart';
+import 'package:might_ampora/Pages/Home/HomeScreen.dart';
 
 class AppRoutes {
   static  getRoutes() => [
@@ -17,6 +18,10 @@ class AppRoutes {
         name: RouteName.login,
         page: () => LoginPage(),
         binding: BindingsBuilder.put(() => LoginPageController()),
+        ),
+        GetPage(
+        name: RouteName.home,
+        page: () => const HomeScreen(),
         ),
   ];
 }
