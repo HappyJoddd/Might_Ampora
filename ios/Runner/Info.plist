@@ -4,6 +4,20 @@
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>NSCameraUsageDescription</key>
+	<string>We need access to your camera to take photos of your devices</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>We need access to your photo library to select images</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>We need access to save photos to your library</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>We need access to your microphone for video recording</string>
+	<key>NSMotionUsageDescription</key>
+	<string>We need access to your motion and fitness data to track your steps</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>We need access to your location to get air quality data for your area</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>We need access to your location to provide accurate air quality information</string>
 	<key>CFBundleDisplayName</key>
 	<string>Might Ampora</string>
 	<key>CFBundleExecutable</key>

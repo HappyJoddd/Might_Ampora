@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl_phone_field/intl_phone_field.dart';
-import 'package:might_ampora/Pages/Home/HomeScreen.dart';
-import 'Otp.dart';
+import '../Home/HomeScreen.dart';
+import 'registarPage.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -278,19 +278,19 @@ class _LoginPageState extends State<LoginPage> {
                       // Navigate to OTP page
                       Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (context) => const HomeScreen()),
+                        MaterialPageRoute(builder: (context) => const RegisterPage()),
                       );
                     } : null,
                     style: ElevatedButton.styleFrom(
                       backgroundColor: _isPhoneValid 
-                          ? const Color(0xFF4CAF50) 
+                          ? const Color(0xFFF59E0B) 
                           : Colors.grey[300],
                       foregroundColor: _isPhoneValid 
                           ? Colors.white 
                           : Colors.grey[600],
                       elevation: _isPhoneValid ? 2 : 0,
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(screenWidth * 0.03),
+                        borderRadius: BorderRadius.circular(screenWidth * 0.1),
                       ),
                     ),
                     child: Text(
