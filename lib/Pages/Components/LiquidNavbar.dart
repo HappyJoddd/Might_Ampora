@@ -268,7 +268,7 @@ class _LiquidNavbarState extends State<LiquidNavbar>
                   child: Icon(
                     _showOverlay ? Icons.close_rounded : Icons.add_rounded,
                     color: const Color(0xFF193B2D),
-                    size: 26,
+                    size: 35,
                   ),
                 ),
               ),

@@ -1,5 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:might_ampora/Pages/Solar/SolarEngery.dart';
+import 'package:pedometer/pedometer.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:table_calendar/table_calendar.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:async';
 import '../Components/LiquidNavbar.dart';
 import '../Scaning_Option/EnergyPage.dart';
 
@@ -12,6 +19,226 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
+  int _steps = 0;
+  int _baselineSteps = 0; // Store the step count at the start of the day
+  StreamSubscription<StepCount>? _stepCountStream;
+  DateTime _selectedDate = DateTime.now();
+  DateTime _focusedDay = DateTime.now();
+  int _aqiValue = 86; // Default AQI value
+  String? _location;
+  Timer? _midnightTimer;
+  
+  @override
+  void initState() {
+    super.initState();
+    _initPedometer();
+    _requestLocationPermission();
+    _scheduleMidnightReset();
+  }
+  
+  @override
+  void dispose() {
+    _stepCountStream?.cancel();
+    _midnightTimer?.cancel();
+    super.dispose();
+  }
+  
+  Future<void> _initPedometer() async {
+    PermissionStatus permission = await Permission.activityRecognition.request();
+    if (permission.isGranted) {
+      await _loadDailySteps();
+      _stepCountStream = Pedometer.stepCountStream.listen(
+        _onStepCount,
+        onError: _onStepCountError,
+        cancelOnError: false,
+      );
+    }
+  }
+  
+  Future<void> _loadDailySteps() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    String today = DateTime.now().toIso8601String().split('T')[0];
+    String? savedDate = prefs.getString('step_date');
+    
+    if (savedDate != today) {
+      // New day - reset steps
+      await prefs.setString('step_date', today);
+      await prefs.setInt('baseline_steps', 0);
+      _baselineSteps = 0;
+    } else {
+      // Same day - load saved baseline
+      _baselineSteps = prefs.getInt('baseline_steps') ?? 0;
+    }
+  }
+  
+  void _onStepCount(StepCount event) async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    
+    if (_baselineSteps == 0 && event.steps > 0) {
+      // First time getting steps today - set baseline
+      _baselineSteps = event.steps;
+      await prefs.setInt('baseline_steps', _baselineSteps);
+    }
+    
+    setState(() {
+      // Calculate daily steps by subtracting baseline
+      _steps = event.steps - _baselineSteps;
+      if (_steps < 0) _steps = 0; // Handle edge cases
+    });
+  }
+  
+  void _onStepCountError(error) {
+    print('Pedometer error: $error');
+  }
+  
+  void _scheduleMidnightReset() {
+    DateTime now = DateTime.now();
+    DateTime midnight = DateTime(now.year, now.month, now.day + 1);
+    Duration timeUntilMidnight = midnight.difference(now);
+    
+    _midnightTimer = Timer(timeUntilMidnight, () {
+      _resetDailySteps();
+      _scheduleMidnightReset(); // Schedule next reset
+    });
+  }
+  
+  Future<void> _resetDailySteps() async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    String today = DateTime.now().toIso8601String().split('T')[0];
+    await prefs.setString('step_date', today);
+    await prefs.setInt('baseline_steps', 0);
+    setState(() {
+      _baselineSteps = 0;
+      _steps = 0;
+    });
+  }
+
+  Future<void> _requestLocationPermission() async {
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+    if (permission == LocationPermission.whileInUse || 
+        permission == LocationPermission.always) {
+      _getCurrentLocation();
+    }
+  }
+
+  Future<void> _getCurrentLocation() async {
+    try {
+      Position position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+      setState(() {
+        _location = '${position.latitude}, ${position.longitude}';
+      });
+      _simulateAQI();
+    } catch (e) {
+      print('Error getting location: $e');
+    }
+  }
+
+  void _simulateAQI() {
+    setState(() {
+      _aqiValue = 86; // Change to test: 30 (Good), 75 (Moderate), 120 (Bad)
+    });
+  }
+
+  Map<String, dynamic> _getAQIInfo() {
+    if (_aqiValue < 50) {
+      return {
+        'label': 'Good',
+        'color': const Color(0xFF90EE90), // Light green
+        'backgroundColor': const Color(0xFFE8F5E9), // Lightest green
+      };
+    } else if (_aqiValue <= 100) {
+      return {
+        'label': 'Moderate',
+        'color': const Color(0xFFFFA726), // Orange
+        'backgroundColor': const Color(0xFFFFE0B2), // Light orange
+      };
+    } else {
+      return {
+        'label': 'Bad',
+        'color': const Color.fromARGB(255, 237, 6, 6), // Light red
+        'backgroundColor': Color.fromRGBO(251, 150, 153, 1), // Light red
+      };
+    }
+  }
+
+  void _showCalendarDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Select Date',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black87,
+                ),
+              ),
+              const SizedBox(height: 16),
+              TableCalendar(
+                firstDay: DateTime.now().subtract(const Duration(days: 365)),
+                lastDay: DateTime.now(),
+                focusedDay: _focusedDay,
+                selectedDayPredicate: (day) => isSameDay(_selectedDate, day),
+                calendarFormat: CalendarFormat.month,
+                onDaySelected: (selectedDay, focusedDay) {
+                  setState(() {
+                    _selectedDate = selectedDay;
+                    _focusedDay = focusedDay;
+                  });
+                  Navigator.pop(context);
+                },
+                calendarStyle: CalendarStyle(
+                  selectedDecoration: BoxDecoration(
+                    color: const Color(0xFF1E3A5F),
+                    shape: BoxShape.circle,
+                  ),
+                  todayDecoration: BoxDecoration(
+                    color: const Color(0xFF4CAF50),
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                headerStyle: HeaderStyle(
+                  formatButtonVisible: false,
+                  titleCentered: true,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+  
+  String _formatDate(DateTime date) {
+    final months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return '${months[date.month - 1]} ${date.day}, ${date.year}';
+  }
+
+  String _getDayLetter(int weekday) {
+    switch (weekday) {
+      case 1: return 'M';
+      case 2: return 'T';
+      case 3: return 'W';
+      case 4: return 'T';
+      case 5: return 'F';
+      case 6: return 'S';
+      case 7: return 'S';
+      default: return '';
+    }
+  }
 
   void _onNavItemSelected(int index) {
     setState(() {
@@ -30,10 +257,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    print('HomeScreen building...'); // Debug print
     final screenHeight = MediaQuery.of(context).size.height;
     final screenWidth = MediaQuery.of(context).size.width;
-    print('Screen size: $screenWidth x $screenHeight'); // Debug print
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: const SystemUiOverlayStyle(
@@ -50,17 +275,67 @@ class _HomeScreenState extends State<HomeScreen> {
             // Scrollable content
             Positioned.fill(
               child: SingleChildScrollView(
-                padding: EdgeInsets.only(
-                  bottom: screenHeight * 0.12, // Add bottom padding for navbar
-                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     _buildHeader(screenWidth, screenHeight),
-                    const SizedBox(height: 20),
+                    
+                    // Live AQI Banner - No space between header and banner
+                    Container(
+                      width: double.infinity,
+                      padding: EdgeInsets.symmetric(
+                        horizontal: screenWidth * 0.04,
+                        vertical: screenHeight * 0.01,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _getAQIInfo()['backgroundColor'], // Dynamic background color
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween, // Space between items
+                        children: [
+                          Row(
+                            children: [
+                              Container(
+                                decoration: BoxDecoration(
+                                  color: _getAQIInfo()['color'],
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                              Text(
+                                'Live AQI',
+
+                                style: TextStyle(
+                                  fontSize: screenWidth * 0.035,
+                                  color: Colors.black87,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                          Text(
+                            '$_aqiValue',
+                            style: TextStyle(
+                              fontSize: screenWidth * 0.06,
+                              fontWeight: FontWeight.bold,
+                              color: _getAQIInfo()['color'],
+                            ),
+                          ),
+                          Text(
+                            _getAQIInfo()['label'],
+                            style: TextStyle(
+                              fontSize: screenWidth * 0.04,
+                              color: Colors.black87,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    
+                    SizedBox(height: screenHeight * 0.01),
   
                     Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                      padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.04),
                     child: Text(
                       "Dashboard",
                       style: TextStyle(
@@ -71,7 +346,15 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
 
-                    const SizedBox(height: 10),
+                    SizedBox(height: screenHeight * 0.01),
+                    
+                    // Energy Summary Card
+                    Padding(
+                      padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.035),
+                      child: _buildEnergySummaryCard(screenWidth, screenHeight),
+                    ),
+
+                    const SizedBox(height: 20),
 
                     _infoCard(
                     context,
@@ -105,6 +388,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     description: "Find out what works for you today",
                     buttonText: "Scan now !",
                     imagePath: "images/Sun.png",
+                    navigateToPage: RenewableEnergyEstimation(),
                   ),
                     _infoCard(
                     context,
@@ -145,7 +429,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildHeader(double screenWidth, double screenHeight) {
     return Container(
       width: screenWidth,
-      height: screenHeight * 0.345, // Increased height to match the design
+      height: screenHeight * 0.32, // Increased height to match the design
       decoration: const BoxDecoration(
         gradient: LinearGradient(
           colors: [Color(0xFF4CAF50), Color(0xFF66BB6A)],
@@ -182,10 +466,10 @@ class _HomeScreenState extends State<HomeScreen> {
           // Main content
           Padding(
             padding: EdgeInsets.only(
-              left: 20,
-              right: 20,
-              top: MediaQuery.of(context).padding.top + 20,
-              bottom: 15, // Reduced from 30 to 15
+              left: screenWidth * 0.05,
+              right: screenWidth * 0.05,
+              top: screenHeight * 0.05,
+              bottom: screenHeight * 0.005,
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -285,6 +569,286 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildEnergySummaryCard(double screenWidth, double screenHeight) {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: const Color(0xFFE6F4FE), // Background color
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: EdgeInsets.only(left: screenWidth * 0.04, right: screenWidth * 0.04, top: screenHeight * 0.012),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Date selector - Clickable
+            GestureDetector(
+              onTap: _showCalendarDialog,
+              child: Row(
+                children: [
+                  Text(
+                    _formatDate(_selectedDate),
+                    style: TextStyle(
+                      fontSize: screenWidth * 0.04,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black87,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            
+            // Custom Calendar matching design - Non-scrollable
+            Container(
+              height: 75,
+              padding: EdgeInsets.only(bottom: screenHeight * 0.005),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: List.generate(7, (index) {
+                  final date = DateTime.now().add(Duration(days: index - 3));
+                  final isSelected = date.day == _selectedDate.day &&
+                      date.month == _selectedDate.month &&
+                      date.year == _selectedDate.year;
+                  
+                  return GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        _selectedDate = date;
+                      });
+                    },
+                    child: Container(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          // Date number with white border for selected
+                          Container(
+                            width: screenWidth * 0.115,
+                            height: screenWidth * 0.115,
+                            decoration: BoxDecoration(
+                              color: isSelected 
+                                  ? const Color(0xFF1E3A5F) // Dark blue for selected
+                                  : Colors.transparent,
+                              shape: BoxShape.circle,
+                              border: isSelected
+                                  ? Border.all(
+                                      color: Colors.white,
+                                      width: 3,
+                                    )
+                                  : null,
+                            ),
+                            child: Center(
+                              child: Text(
+                                '${date.day}',
+                                style: TextStyle(
+                                  fontSize: screenWidth * 0.04,
+                                  fontWeight: FontWeight.w600,
+                                  color: isSelected ? Colors.white : Colors.black54,
+                                ),
+                              ),
+                            ),
+                          ),
+                          SizedBox(height: 4),
+                          // Day letter
+                          Text(
+                            _getDayLetter(date.weekday),
+                            style: TextStyle(
+                              fontSize: screenWidth * 0.028,
+                              color: isSelected ? Colors.black87 : Colors.black54,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }),
+              ),
+            ),
+            
+            // Main row with left content and Mascot
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                // Left side content
+                Expanded(
+                  child: Column(
+                    children: [
+                      // Target and You Saved in one box
+                      Container(
+                        padding: EdgeInsets.all(screenWidth * 0.03),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFCFCFC),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Column(
+                          children: [
+                            // Target section
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Image.asset(
+                                  'images/target.png',
+                                  width: screenWidth * 0.1,
+                                  height: screenWidth * 0.1,
+                                  fit: BoxFit.contain,
+                                ),
+                                SizedBox(width: screenWidth * 0.025),
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                  children: [
+                                    Text(
+                                      'Target',
+                                      style: TextStyle(
+                                        fontSize: screenWidth * 0.035,
+                                        color: Colors.black87,
+                                      ),
+                                    ),
+                                    Text(
+                                      '20 kg CO₂eq',
+                                      style: TextStyle(
+                                        fontSize: screenWidth * 0.042,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.black87,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                            
+                            // Divider
+                            Padding(
+                              padding: EdgeInsets.symmetric(vertical: screenHeight * 0.008),
+                              child: Divider(
+                                color: const Color(0xFFE0E0E0),
+                                thickness: 1,
+                              ),
+                            ),
+                            
+                            // You Saved section
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Image.asset(
+                                  'images/save.png',
+                                  width: screenWidth * 0.1,
+                                  height: screenWidth * 0.1,
+                                  fit: BoxFit.contain,
+                                ),
+                                SizedBox(width: screenWidth * 0.025),
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                  children: [
+                                    Text(
+                                      'You Saved',
+                                      style: TextStyle(
+                                        fontSize: screenWidth * 0.035,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.black87,
+                                      ),
+                                    ),
+                                    Text(
+                                      '10 kg CO₂eq',
+                                      style: TextStyle(
+                                        fontSize: screenWidth * 0.042,
+                                        fontWeight: FontWeight.bold,
+                                        color: const Color(0xFFFFA726),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                      
+                      SizedBox(height: screenHeight * 0.01),
+                      
+                      // Steps box
+                      Container(
+                        width: double.infinity,
+                        padding: EdgeInsets.all(screenWidth * 0.03),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFCFCFC),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              'Steps 🚶',
+                              style: TextStyle(
+                                fontSize: screenWidth * 0.035,
+                                color: Colors.black87,
+                              ),
+                            ),
+                            SizedBox(width: screenWidth * 0.02),
+                            Text(
+                              '$_steps',
+                              style: TextStyle(
+                                fontSize: screenWidth * 0.055,
+                                fontWeight: FontWeight.bold,
+                                color: const Color(0xFF4CAF50),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                
+                SizedBox(width: screenWidth * 0.02),
+                
+                // Mascot on the right
+                Container(
+                  width: screenWidth * 0.28,
+                  height: screenWidth * 0.35,
+                  child: Image.asset(
+                    'images/Mascot_good.png',
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) {
+                      return Icon(
+                        Icons.emoji_emotions,
+                        size: screenWidth * 0.25,
+                        color: Colors.green,
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+            
+            SizedBox(height: screenHeight * 0.012),
+            
+            // Bottom message - Centered
+            Center(
+              child: Text(
+                'Great job! You\'re helping the planet\nwith your eco-friendly choices!',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 16.32,
+                  fontWeight: FontWeight.w600,
+                  color: const Color(0xFF14532B),
+                  height: 1.2,
+                ),
+              ),
+            ),
+            SizedBox(height: screenHeight * 0.01),
+          ],
+        ),
       ),
     );
   }

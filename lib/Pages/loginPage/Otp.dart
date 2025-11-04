@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
+import '../Home/HomeScreen.dart';
 import 'package:pinput/pinput.dart';
 import 'dart:async';
-import 'package:might_ampora/Pages/Scaning_Option/EnergyPage.dart';
 
 class OTPpage extends StatefulWidget {
-  const OTPpage({Key? key}) : super(key: key);
+  const OTPpage({super.key});
 
   @override
   State<OTPpage> createState() => _OTPpageState();
@@ -64,7 +64,7 @@ class _OTPpageState extends State<OTPpage> {
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (context) => const EnergyOnboardingPage(),
+          builder: (context) => const HomeScreen(),
         ),
       );
     } else {
@@ -92,54 +92,6 @@ class _OTPpageState extends State<OTPpage> {
     var screenHeight = MediaQuery.of(context).size.height;
     
     // Dynamic sizing based on screen width
-    var pinWidth = screenWidth * 0.15; // 15% of screen width
-    var pinHeight = pinWidth; // Keep it square
-    var fontSize = screenWidth * 0.06; // 6% of screen width
-    
-    final defaultPinTheme = PinTheme(
-      width: pinWidth,
-      height: pinHeight,
-      textStyle: TextStyle(
-        fontSize: fontSize,
-        color: Colors.black,
-        fontWeight: FontWeight.w500,
-      ),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(screenWidth * 0.03),
-        border: Border.all(
-          color: Colors.grey.shade300,
-          width: 1.5,
-        ),
-      ),
-    );
-
-    final focusedPinTheme = defaultPinTheme.copyWith(
-      decoration: defaultPinTheme.decoration!.copyWith(
-        border: Border.all(
-          color: const Color(0xFF4CAF50), // Green color for focused state
-          width: 2,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF4CAF50).withOpacity(0.1),
-            blurRadius: screenWidth * 0.02,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-    );
-
-    final submittedPinTheme = defaultPinTheme.copyWith(
-      decoration: defaultPinTheme.decoration!.copyWith(
-        color: const Color(0xFF4CAF50).withOpacity(0.1),
-        border: Border.all(
-          color: const Color(0xFF4CAF50),
-          width: 1.5,
-        ),
-      ),
-    );
-
     return Scaffold(
       backgroundColor: Colors.white,
       resizeToAvoidBottomInset: false,
@@ -177,7 +129,7 @@ class _OTPpageState extends State<OTPpage> {
                             style: TextStyle(
                               fontSize: screenWidth * 0.08,
                               color: const Color(0xFFEF5F00), // Orange color
-                              fontWeight: FontWeight.bold,
+                              fontWeight: FontWeight.w400,
                             ),
                           ),
                           TextSpan(
@@ -185,7 +137,7 @@ class _OTPpageState extends State<OTPpage> {
                             style: TextStyle(
                               fontSize: screenWidth * 0.08,
                               color: const Color(0xFF2B9A66), // Green color
-                              fontWeight: FontWeight.bold,
+                              fontWeight: FontWeight.w400,
                             ),
                           ),
                         ],
@@ -207,27 +159,80 @@ class _OTPpageState extends State<OTPpage> {
                     SizedBox(height: screenHeight * 0.03),
                     
                     // OTP Input Fields
-                    Pinput(
-                      controller: _pinController,
-                      focusNode: _focusNode,
-                      length: 4,
-                      defaultPinTheme: defaultPinTheme,
-                      focusedPinTheme: focusedPinTheme,
-                      submittedPinTheme: submittedPinTheme,
-                      showCursor: true,
-                      cursor: Container(
-                        width: 2,
-                        height: screenWidth * 0.06,
-                        color: const Color(0xFF4CAF50),
+                    Container(
+                      padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.05),
+                      child: Pinput(
+                        controller: _pinController,
+                        focusNode: _focusNode,
+                        length: 4,
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        defaultPinTheme: PinTheme(
+                          width: screenWidth * 0.15,
+                          height: screenWidth * 0.15,
+                          textStyle: TextStyle(
+                            fontSize: screenWidth * 0.06,
+                            color: Colors.black,
+                            fontWeight: FontWeight.w500,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: Colors.grey.shade300,
+                              width: 1.5,
+                            ),
+                          ),
+                        ),
+                        focusedPinTheme: PinTheme(
+                          width: screenWidth * 0.15,
+                          height: screenWidth * 0.15,
+                          textStyle: TextStyle(
+                            fontSize: screenWidth * 0.06,
+                            color: Colors.black,
+                            fontWeight: FontWeight.w500,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: const Color(0xFF4CAF50),
+                              width: 2,
+                            ),
+                          ),
+                        ),
+                        submittedPinTheme: PinTheme(
+                          width: screenWidth * 0.15,
+                          height: screenWidth * 0.15,
+                          textStyle: TextStyle(
+                            fontSize: screenWidth * 0.06,
+                            color: Colors.black,
+                            fontWeight: FontWeight.w500,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF4CAF50).withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: const Color(0xFF4CAF50),
+                              width: 1.5,
+                            ),
+                          ),
+                        ),
+                        showCursor: true,
+                        cursor: Container(
+                          width: 2,
+                          height: screenWidth * 0.06,
+                          color: const Color(0xFF4CAF50),
+                        ),
+                        onCompleted: (pin) {
+                          print('OTP completed: $pin');
+                        },
+                        onChanged: (pin) {
+                          setState(() {
+                            _isOtpComplete = pin.length == 4;
+                          });
+                        },
                       ),
-                      onCompleted: (pin) {
-                        print('OTP completed: $pin');
-                      },
-                      onChanged: (pin) {
-                        setState(() {
-                          _isOtpComplete = pin.length == 4;
-                        });
-                      },
                     ),
                     
                     SizedBox(height: screenHeight * 0.04),
@@ -242,18 +247,16 @@ class _OTPpageState extends State<OTPpage> {
                           style: TextStyle(
                             fontSize: screenWidth * 0.035,
                             color: _isResendEnabled 
-                              ? const Color(0xFF4CAF50) 
+                              ? Colors.black
                               : Colors.grey.shade600,
                             fontWeight: FontWeight.w500,
-                            decoration: _isResendEnabled 
-                              ? TextDecoration.underline 
-                              : TextDecoration.none,
+                            decoration: TextDecoration.underline,
                           ),
                         ),
                       ),
                     ),
                     
-                    SizedBox(height: screenHeight * 0.03),
+                    SizedBox(height: screenHeight * 0.02),
                     
                     // Continue Button
                     SizedBox(
@@ -263,12 +266,12 @@ class _OTPpageState extends State<OTPpage> {
                         onPressed: _isOtpComplete ? _onContinue : null,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: _isOtpComplete 
-                              ? const Color(0xFF2E7D32) // Dark green when OTP complete
-                              : const Color(0xFFA8D8A8), // Light green when incomplete
+                              ? const Color(0xFFF59E0B) // Dark green when OTP complete
+                              : const Color(0xFFFDD28A), // Light green when incomplete
                           foregroundColor: Colors.white,
                           elevation: 0,
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(screenWidth * 0.03),
+                            borderRadius: BorderRadius.circular(screenWidth * 0.07),
                           ),
                         ),
                         child: Text(
