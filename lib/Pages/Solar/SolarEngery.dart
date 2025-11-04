@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
 import '../Components/LiquidNavbar.dart';
 
 class RenewableEnergyEstimation extends StatefulWidget {
@@ -16,18 +18,77 @@ class _RenewableEnergyEstimationState extends State<RenewableEnergyEstimation> {
   LatLng _currentPosition = LatLng(28.6139, 77.2090); // Default Delhi
   int _selectedNavIndex = 0;
   final TextEditingController _searchController = TextEditingController();
+  List<dynamic> _searchSuggestions = [];
+  final FocusNode _searchFocusNode = FocusNode();
 
   @override
   void initState() {
     super.initState();
     _getCurrentLocation();
+    _searchController.addListener(_onSearchChanged);
   }
 
   @override
   void dispose() {
     _mapController.dispose();
     _searchController.dispose();
+    _searchFocusNode.dispose();
     super.dispose();
+  }
+
+  void _onSearchChanged() {
+    if (_searchController.text.isEmpty) {
+      setState(() {
+        _searchSuggestions = [];
+      });
+      return;
+    }
+
+    if (_searchController.text.length >= 3) {
+      _searchLocation(_searchController.text);
+    }
+  }
+
+  Future<void> _searchLocation(String query) async {
+    try {
+      // Using Nominatim API (OpenStreetMap's free geocoding service)
+      final url = Uri.parse(
+        'https://nominatim.openstreetmap.org/search?q=$query&format=json&limit=5&addressdetails=1',
+      );
+
+      final response = await http.get(
+        url,
+        headers: {
+          'User-Agent': 'MightAmpora/1.0',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final List<dynamic> results = json.decode(response.body);
+        setState(() {
+          _searchSuggestions = results;
+        });
+      }
+    } catch (e) {
+      print('Error searching location: $e');
+    }
+  }
+
+  void _selectLocation(dynamic place) {
+    final lat = double.parse(place['lat']);
+    final lon = double.parse(place['lon']);
+    final displayName = place['display_name'];
+
+    setState(() {
+      _currentPosition = LatLng(lat, lon);
+      _searchController.text = displayName;
+      _searchSuggestions = [];
+      _searchFocusNode.unfocus();
+    });
+
+    // Move map to selected location with offset
+    final offsetLat = lat - 0.008;
+    _mapController.move(LatLng(offsetLat, lon), 15.0);
   }
 
   Future<void> _getCurrentLocation() async {
@@ -80,39 +141,49 @@ class _RenewableEnergyEstimationState extends State<RenewableEnergyEstimation> {
     );
 
     return Scaffold(
-      body: Stack(
-        children: [
-          // OpenStreetMap Background
-          FlutterMap(
-            mapController: _mapController,
-            options: MapOptions(
-              initialCenter: offsetPosition,
-              initialZoom: 15.0,
-              minZoom: 5.0,
-              maxZoom: 18.0,
-            ),
-            children: [
-              TileLayer(
-                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                userAgentPackageName: 'com.example.might_ampora',
-                maxZoom: 19,
-              ),
-              MarkerLayer(
-                markers: [
-                  Marker(
-                    point: _currentPosition,
-                    width: 50,
-                    height: 50,
-                    child: Icon(
-                      Icons.location_on,
-                      size: 50,
-                      color: const Color(0xFF2B9A66),
-                    ),
+      resizeToAvoidBottomInset: true,
+      body: GestureDetector(
+        onTap: () {
+          // Dismiss keyboard when tapping outside
+          FocusScope.of(context).unfocus();
+        },
+        child: SingleChildScrollView(
+          physics: const ClampingScrollPhysics(),
+          child: SizedBox(
+            height: screenHeight,
+            child: Stack(
+              children: [
+                // OpenStreetMap Background
+                FlutterMap(
+                  mapController: _mapController,
+                  options: MapOptions(
+                    initialCenter: offsetPosition,
+                    initialZoom: 15.0,
+                    minZoom: 5.0,
+                    maxZoom: 18.0,
                   ),
-                ],
-              ),
-            ],
-          ),
+                  children: [
+                    TileLayer(
+                      urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                      userAgentPackageName: 'com.example.might_ampora',
+                      maxZoom: 19,
+                    ),
+                    MarkerLayer(
+                      markers: [
+                        Marker(
+                          point: _currentPosition,
+                          width: 50,
+                          height: 50,
+                          child: Icon(
+                            Icons.location_on,
+                            size: 50,
+                            color: const Color(0xFF2B9A66),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
 
           // Top Header with back button and title
           Positioned(
@@ -153,12 +224,30 @@ class _RenewableEnergyEstimationState extends State<RenewableEnergyEstimation> {
                       ),
                   SizedBox(width: screenWidth * 0.03),
                   // Title
-                  Text(
-                    'Renewable Energy Estimation',
-                    style: TextStyle(
-                      fontSize: screenWidth * 0.045,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.black87,
+                  Expanded(
+                    child: Text(
+                      'Renewable Energy Estimation',
+                      style: TextStyle(
+                        fontSize: screenWidth * 0.045,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.black87,
+                      ),
+                    ),
+                  ),
+                  // Current Location button
+                  GestureDetector(
+                    onTap: () => _getCurrentLocation(),
+                    child: Container(
+                      width: screenWidth * 0.11,
+                      height: screenWidth * 0.11,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.my_location,
+                        color: const Color(0xFF2D8B6E),
+                        size: screenWidth * 0.05,
+                      ),
                     ),
                   ),
                 ],
@@ -166,42 +255,107 @@ class _RenewableEnergyEstimationState extends State<RenewableEnergyEstimation> {
             ),
           ),
 
-          // Search bar
+          // Search bar with autocomplete
           Positioned(
             top: MediaQuery.of(context).padding.top + screenHeight * 0.085,
             left: screenWidth * 0.04,
             right: screenWidth * 0.04,
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(screenWidth * 0.03),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
-                    blurRadius: 8,
-                    offset: Offset(0, screenHeight * 0.0025),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(screenWidth * 0.03),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.1),
+                          blurRadius: 8,
+                          offset: Offset(0, screenHeight * 0.0025),
+                        ),
+                      ],
+                    ),
+                    child: TextField(
+                      controller: _searchController,
+                      focusNode: _searchFocusNode,
+                      decoration: InputDecoration(
+                        hintText: 'Search location...',
+                        hintStyle: TextStyle(
+                          color: Colors.grey[400],
+                          fontSize: screenWidth * 0.04,
+                        ),
+                        prefixIcon: Icon(
+                          Icons.search,
+                          color: Colors.grey[400],
+                        ),
+                        suffixIcon: _searchController.text.isNotEmpty
+                            ? IconButton(
+                                icon: Icon(
+                                  Icons.clear,
+                                  color: Colors.grey[400],
+                                ),
+                                onPressed: () {
+                                  _searchController.clear();
+                                  setState(() {
+                                    _searchSuggestions = [];
+                                  });
+                                },
+                              )
+                            : null,
+                        border: InputBorder.none,
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: screenWidth * 0.04,
+                          vertical: screenHeight * 0.017,
+                        ),
+                      ),
+                    ),
                   ),
-                ],
-              ),
-              child: TextField(
-                controller: _searchController,
-                decoration: InputDecoration(
-                  hintText: 'Sargasan, Kudasan',
-                  hintStyle: TextStyle(
-                    color: Colors.grey[400],
-                    fontSize: screenWidth * 0.04,
-                  ),
-                  prefixIcon: Icon(
-                    Icons.search,
-                    color: Colors.grey[400],
-                  ),
-                  border: InputBorder.none,
-                  contentPadding: EdgeInsets.symmetric(
-                    horizontal: screenWidth * 0.04,
-                    vertical: screenHeight * 0.017,
-                  ),
-                ),
-              ),
+                  // Search suggestions dropdown
+                  if (_searchSuggestions.isNotEmpty)
+                    Container(
+                      margin: EdgeInsets.only(top: screenHeight * 0.01),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(screenWidth * 0.03),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.1),
+                            blurRadius: 8,
+                            offset: Offset(0, screenHeight * 0.0025),
+                          ),
+                        ],
+                      ),
+                      constraints: BoxConstraints(
+                        maxHeight: screenHeight * 0.35,
+                      ),
+                      child: ListView.builder(
+                        shrinkWrap: true,
+                        padding: EdgeInsets.zero,
+                        physics: const ClampingScrollPhysics(),
+                        itemCount: _searchSuggestions.length,
+                        itemBuilder: (context, index) {
+                          final suggestion = _searchSuggestions[index];
+                          return ListTile(
+                            leading: Icon(
+                              Icons.location_on,
+                              color: const Color(0xFF2B9A66),
+                              size: screenWidth * 0.05,
+                            ),
+                            title: Text(
+                              suggestion['display_name'] ?? '',
+                              style: TextStyle(
+                                fontSize: screenWidth * 0.035,
+                                color: Colors.black87,
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            onTap: () => _selectLocation(suggestion),
+                          );
+                        },
+                      ),
+                    ),
+              ],
             ),
           ),
 
@@ -301,7 +455,10 @@ class _RenewableEnergyEstimationState extends State<RenewableEnergyEstimation> {
               onItemSelected: _onNavItemSelected,
             ),
           ),
-        ],
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
