@@ -3,29 +3,10 @@ import 'package:camera/camera.dart';
 import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import 'dart:convert';
+import 'package:http/http.dart' as http;
 import 'Extradetail.dart';
-import '../../services/gadget_service.dart';
-Map<String, dynamic> parseBackendData(dynamic response) {
-  final data = response["data"];
-
-  if (data == null) {
-    return {"name": "Unknown Appliance", "confidence": 0.0};
-  }
-
-  List labels = data["labels"] ?? [];
-  List objects = data["objects"] ?? [];
-
-  labels.sort((a, b) => (b["score"] ?? 0).compareTo(a["score"] ?? 0));
-  final bestLabel = labels.isNotEmpty ? labels.first : null;
-
-  objects.sort((a, b) => (b["score"] ?? 0).compareTo(a["score"] ?? 0));
-  final bestObject = objects.isNotEmpty ? objects.first : null;
-
-  return {
-    "name": bestLabel?["description"] ?? bestObject?["name"] ?? "Unknown Appliance",
-    "confidence": bestLabel?["score"] ?? bestObject?["score"] ?? 0.0,
-  };
-}
+import 'package:mime/mime.dart'; // for detecting mime type
+import 'package:http_parser/http_parser.dart'; // for MediaType
 
 
 class CameraGalleryPickerPage extends StatefulWidget {
@@ -44,37 +25,80 @@ class _CameraGalleryPickerPageState extends State<CameraGalleryPickerPage> {
   bool _isCameraInitialized = false;
   final ImagePicker _picker = ImagePicker();
 
-Future<void> _processImage(File imageFile) async {
-  setState(() => _isLoading = true);
+  // ✅ Upload function (replaces GadgetService call)
+Future<Map<String, dynamic>?> _uploadImage(File imageFile) async {
+  try {
+    final uri = Uri.parse(
+        "https://might-ampora-backend-447t.onrender.com/api/v1/gadgets/recognize");
 
-  final result = await GadgetService.recognizeGadget(imageFile);
+    // ✅ Detect the MIME type (e.g., image/jpeg or image/png)
+    final mimeType = lookupMimeType(imageFile.path) ?? 'image/jpeg';
+    print("🧠 Detected MIME type: $mimeType");
 
-  setState(() => _isLoading = false);
+    final request = http.MultipartRequest('POST', uri);
 
-  if (!mounted) return;
-
-  if (result != null) {
-    debugPrint("✅ Backend result: $result");
-
-    // ⚡️ If result is a String, decode it
-    final parsed = result is String ? jsonDecode(result) : result;
-
-    // Now pass directly to the ExtraDetailPage
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(
-        builder: (context) => ExtraDetailPage(
-          imageFile: imageFile,
-          data: parsed, // ✅ pass backend data directly
-        ),
+    // ✅ Explicitly set MIME type when attaching file
+    request.files.add(
+      await http.MultipartFile.fromPath(
+        'image',
+        imageFile.path,
+        contentType: MediaType.parse(mimeType),
       ),
     );
-  } else {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Failed to identify device. Try again.")),
-    );
+
+    // Headers
+    request.headers.addAll({
+      'Accept': 'application/json',
+    });
+
+    final streamedResponse = await request.send();
+    final response = await http.Response.fromStream(streamedResponse);
+
+    print("URI: $uri");
+    print("STATUS CODE: ${response.statusCode}");
+    print("RAW BODY: ${response.body}");
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body);
+    } else {
+      print("Upload failed → ${response.body}");
+      return jsonDecode(response.body);
+    }
+  } catch (e) {
+    print("🚨 Upload exception: $e");
+    return null;
   }
 }
+
+  Future<void> _processImage(File imageFile) async {
+    setState(() => _isLoading = true);
+
+    final result = await _uploadImage(imageFile);
+
+    setState(() => _isLoading = false);
+
+    if (!mounted) return;
+
+    if (result != null && result['success'] == true) {
+      debugPrint("✅ Backend result: $result");
+
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (context) => ExtraDetailPage(
+            imageFile: imageFile,
+            data: result,
+          ),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(result?['message'] ?? "Failed to identify device. Try again."),
+        ),
+      );
+    }
+  }
 
   @override
   void initState() {
@@ -132,195 +156,177 @@ Future<void> _processImage(File imageFile) async {
     super.dispose();
   }
 
-@override
-Widget build(BuildContext context) {
-  final screenHeight = MediaQuery.of(context).size.height;
-  final screenWidth = MediaQuery.of(context).size.width;
+  @override
+  Widget build(BuildContext context) {
+    final screenHeight = MediaQuery.of(context).size.height;
+    final screenWidth = MediaQuery.of(context).size.width;
 
-  return Scaffold(
-    backgroundColor: Colors.black,
-    body: SizedBox(
-      height: screenHeight,
-      width: screenWidth,
-      child: Stack(
-        children: [
-          // Camera Preview
-          if (_isCameraInitialized && _cameraController != null)
-            Positioned.fill(child: CameraPreview(_cameraController!))
-          else
-            const Center(
-              child: CircularProgressIndicator(color: Colors.white),
-            ),
-
-          // Frame overlay
-          Positioned.fill(
-            child: CustomPaint(
-              painter: FramePainter(
-                screenWidth: screenWidth,
-                screenHeight: screenHeight,
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: SizedBox(
+        height: screenHeight,
+        width: screenWidth,
+        child: Stack(
+          children: [
+            if (_isCameraInitialized && _cameraController != null)
+              Positioned.fill(child: CameraPreview(_cameraController!))
+            else
+              const Center(
+                child: CircularProgressIndicator(color: Colors.white),
               ),
-            ),
-          ),
 
-          // Top Bar
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: SafeArea(
-              child: Container(
-                height: screenHeight * 0.08,
-                padding: EdgeInsets.symmetric(
-                  horizontal: screenWidth * 0.04,
-                  vertical: screenHeight * 0.01,
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.start,
-                  children: [
-                    Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        onTap: () {
-                          Navigator.of(context).pop();
-                        },
-                        borderRadius: BorderRadius.circular(30),
-                        child: Container(
-                          padding: EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withOpacity(0.4),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            Icons.arrow_back,
-                            color: Colors.white,
-                            size: screenWidth * 0.07,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
+            Positioned.fill(
+              child: CustomPaint(
+                painter: FramePainter(
+                  screenWidth: screenWidth,
+                  screenHeight: screenHeight,
                 ),
               ),
             ),
-          ),
 
-          // Bottom Controls
-          Positioned(
-            bottom: 0,
-            left: 0,
-            right: 0,
-            child: SafeArea(
-              child: Container(
-                height: screenHeight * 0.15,
-                padding: EdgeInsets.symmetric(
-                  vertical: screenHeight * 0.02,
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                  children: [
-                    // Gallery
-                    GestureDetector(
-                      onTap: _pickFromGallery,
-                      child: Container(
-                        width: screenWidth * 0.16,
-                        height: screenWidth * 0.16,
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.3),
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 3),
-                        ),
-                        child: Icon(
-                          Icons.photo_library,
-                          color: Colors.white,
-                          size: screenWidth * 0.08,
-                        ),
-                      ),
-                    ),
-
-                    // Capture
-                    GestureDetector(
-                      onTap: _takePicture,
-                      child: Container(
-                        width: screenWidth * 0.2,
-                        height: screenWidth * 0.2,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 5),
-                        ),
-                        child: Padding(
-                          padding: EdgeInsets.all(screenWidth * 0.015),
+            // 🔙 Top bar
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: SafeArea(
+                child: Container(
+                  height: screenHeight * 0.08,
+                  padding: EdgeInsets.symmetric(
+                    horizontal: screenWidth * 0.04,
+                    vertical: screenHeight * 0.01,
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.start,
+                    children: [
+                      Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: () => Navigator.of(context).pop(),
+                          borderRadius: BorderRadius.circular(30),
                           child: Container(
-                            decoration: const BoxDecoration(
-                              color: Colors.white,
+                            padding: EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withOpacity(0.4),
                               shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              Icons.arrow_back,
+                              color: Colors.white,
+                              size: screenWidth * 0.07,
                             ),
                           ),
                         ),
                       ),
-                    ),
-
-                    // Flip
-                    GestureDetector(
-                      onTap: () async {
-                        if (_cameras != null && _cameras!.length > 1) {
-                          final currentCamera = _cameraController!.description;
-                          final newCamera = _cameras!.firstWhere(
-                            (camera) => camera != currentCamera,
-                          );
-
-                          await _cameraController?.dispose();
-                          _cameraController = CameraController(
-                            newCamera,
-                            ResolutionPreset.high,
-                            enableAudio: false,
-                          );
-                          await _cameraController!.initialize();
-                          setState(() {});
-                        }
-                      },
-                      child: Container(
-                        width: screenWidth * 0.16,
-                        height: screenWidth * 0.16,
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.3),
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 3),
-                        ),
-                        child: Icon(
-                          Icons.flip_camera_android,
-                          color: Colors.white,
-                          size: screenWidth * 0.08,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-
-          // ✅ LOADING OVERLAY (MOVED HERE)
-          if (_isLoading)
-            Positioned.fill(
-              child: Container(
-                color: Colors.black54,
-                child: const Center(
-                  child: CircularProgressIndicator(
-                    color: Colors.white,
+                    ],
                   ),
                 ),
               ),
             ),
-        ],
+
+            // 📸 Bottom Controls
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: SafeArea(
+                child: Container(
+                  height: screenHeight * 0.15,
+                  padding: EdgeInsets.symmetric(vertical: screenHeight * 0.02),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      // Gallery
+                      GestureDetector(
+                        onTap: _pickFromGallery,
+                        child: _buildControlButton(
+                          screenWidth,
+                          icon: Icons.photo_library,
+                        ),
+                      ),
+
+                      // Capture
+                      GestureDetector(
+                        onTap: _takePicture,
+                        child: Container(
+                          width: screenWidth * 0.2,
+                          height: screenWidth * 0.2,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.white, width: 5),
+                          ),
+                          child: Padding(
+                            padding: EdgeInsets.all(screenWidth * 0.015),
+                            child: const DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+
+                      // Flip Camera
+                      GestureDetector(
+                        onTap: () async {
+                          if (_cameras != null && _cameras!.length > 1) {
+                            final currentCamera = _cameraController!.description;
+                            final newCamera = _cameras!.firstWhere(
+                              (camera) => camera != currentCamera,
+                            );
+
+                            await _cameraController?.dispose();
+                            _cameraController = CameraController(
+                              newCamera,
+                              ResolutionPreset.high,
+                              enableAudio: false,
+                            );
+                            await _cameraController!.initialize();
+                            setState(() {});
+                          }
+                        },
+                        child: _buildControlButton(
+                          screenWidth,
+                          icon: Icons.flip_camera_android,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
+            if (_isLoading)
+              Positioned.fill(
+                child: Container(
+                  color: Colors.black54,
+                  child: const Center(
+                    child: CircularProgressIndicator(color: Colors.white),
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
-    ),
-  );
+    );
+  }
+
+  Widget _buildControlButton(double screenWidth, {required IconData icon}) {
+    return Container(
+      width: screenWidth * 0.16,
+      height: screenWidth * 0.16,
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.3),
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.white, width: 3),
+      ),
+      child: Icon(icon, color: Colors.white, size: screenWidth * 0.08),
+    );
+  }
 }
 
-}
-
-// Custom painter for the frame brackets
-// Custom painter for the rounded rectangle frame brackets
+// 🎯 Frame painter (unchanged)
 class FramePainter extends CustomPainter {
   final double screenWidth;
   final double screenHeight;
@@ -335,53 +341,42 @@ class FramePainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round;
 
-    final frameHeight = screenHeight * 0.5; // Height of the frame
-    final frameWidth = screenWidth * 0.75; // Width of the frame
-    final cornerLength = screenWidth * 0.12; // Length of corner lines
-    final borderRadius = 20.0; // Radius for rounded corners
+    final frameHeight = screenHeight * 0.5;
+    final frameWidth = screenWidth * 0.75;
+    final cornerLength = screenWidth * 0.12;
+    final borderRadius = 20.0;
 
-    // Calculate frame position (centered)
     final left = (size.width - frameWidth) / 2;
     final right = left + frameWidth;
     final top = (size.height - frameHeight) / 2;
     final bottom = top + frameHeight;
 
-    // Top-left corner
-    final topLeftPath = Path();
-    topLeftPath.moveTo(left + cornerLength, top);
-    topLeftPath.lineTo(left + borderRadius, top);
-    topLeftPath.quadraticBezierTo(left, top, left, top + borderRadius);
-    topLeftPath.lineTo(left, top + cornerLength);
-    canvas.drawPath(topLeftPath, paint);
+    final corners = [
+      Path()
+        ..moveTo(left + cornerLength, top)
+        ..lineTo(left + borderRadius, top)
+        ..quadraticBezierTo(left, top, left, top + borderRadius)
+        ..lineTo(left, top + cornerLength),
+      Path()
+        ..moveTo(right - cornerLength, top)
+        ..lineTo(right - borderRadius, top)
+        ..quadraticBezierTo(right, top, right, top + borderRadius)
+        ..lineTo(right, top + cornerLength),
+      Path()
+        ..moveTo(left, bottom - cornerLength)
+        ..lineTo(left, bottom - borderRadius)
+        ..quadraticBezierTo(left, bottom, left + borderRadius, bottom)
+        ..lineTo(left + cornerLength, bottom),
+      Path()
+        ..moveTo(right, bottom - cornerLength)
+        ..lineTo(right, bottom - borderRadius)
+        ..quadraticBezierTo(right, bottom, right - borderRadius, bottom)
+        ..lineTo(right - cornerLength, bottom),
+    ];
 
-    // Top-right corner
-    final topRightPath = Path();
-    topRightPath.moveTo(right - cornerLength, top);
-    topRightPath.lineTo(right - borderRadius, top);
-    topRightPath.quadraticBezierTo(right, top, right, top + borderRadius);
-    topRightPath.lineTo(right, top + cornerLength);
-    canvas.drawPath(topRightPath, paint);
-
-    // Bottom-left corner
-    final bottomLeftPath = Path();
-    bottomLeftPath.moveTo(left, bottom - cornerLength);
-    bottomLeftPath.lineTo(left, bottom - borderRadius);
-    bottomLeftPath.quadraticBezierTo(left, bottom, left + borderRadius, bottom);
-    bottomLeftPath.lineTo(left + cornerLength, bottom);
-    canvas.drawPath(bottomLeftPath, paint);
-
-    // Bottom-right corner
-    final bottomRightPath = Path();
-    bottomRightPath.moveTo(right, bottom - cornerLength);
-    bottomRightPath.lineTo(right, bottom - borderRadius);
-    bottomRightPath.quadraticBezierTo(
-      right,
-      bottom,
-      right - borderRadius,
-      bottom,
-    );
-    bottomRightPath.lineTo(right - cornerLength, bottom);
-    canvas.drawPath(bottomRightPath, paint);
+    for (var path in corners) {
+      canvas.drawPath(path, paint);
+    }
   }
 
   @override
