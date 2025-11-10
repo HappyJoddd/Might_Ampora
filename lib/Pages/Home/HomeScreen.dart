@@ -7,6 +7,8 @@ import 'package:table_calendar/table_calendar.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:async';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 import '../Components/LiquidNavbar.dart';
 import '../Scaning_Option/EnergyPage.dart';
 
@@ -24,25 +26,25 @@ class _HomeScreenState extends State<HomeScreen> {
   StreamSubscription<StepCount>? _stepCountStream;
   DateTime _selectedDate = DateTime.now();
   DateTime _focusedDay = DateTime.now();
-  int _aqiValue = 86; // Default AQI value
+  int _aqiValue = 86; // Default AQI value (int for UI)
   String? _location;
   Timer? _midnightTimer;
-  
+
   @override
   void initState() {
     super.initState();
     _initPedometer();
-    _requestLocationPermission();
+    _requestLocationPermissionAndFetch();
     _scheduleMidnightReset();
   }
-  
+
   @override
   void dispose() {
     _stepCountStream?.cancel();
     _midnightTimer?.cancel();
     super.dispose();
   }
-  
+
   Future<void> _initPedometer() async {
     PermissionStatus permission = await Permission.activityRecognition.request();
     if (permission.isGranted) {
@@ -54,12 +56,12 @@ class _HomeScreenState extends State<HomeScreen> {
       );
     }
   }
-  
+
   Future<void> _loadDailySteps() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     String today = DateTime.now().toIso8601String().split('T')[0];
     String? savedDate = prefs.getString('step_date');
-    
+
     if (savedDate != today) {
       // New day - reset steps
       await prefs.setString('step_date', today);
@@ -70,57 +72,103 @@ class _HomeScreenState extends State<HomeScreen> {
       _baselineSteps = prefs.getInt('baseline_steps') ?? 0;
     }
   }
-  
+
   void _onStepCount(StepCount event) async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
-    
+
     if (_baselineSteps == 0 && event.steps > 0) {
       // First time getting steps today - set baseline
       _baselineSteps = event.steps;
       await prefs.setInt('baseline_steps', _baselineSteps);
     }
-    
+
+    if (!mounted) return;
     setState(() {
       // Calculate daily steps by subtracting baseline
       _steps = event.steps - _baselineSteps;
       if (_steps < 0) _steps = 0; // Handle edge cases
     });
   }
-  
+
   void _onStepCountError(error) {
     print('Pedometer error: $error');
   }
-  
+
   void _scheduleMidnightReset() {
     DateTime now = DateTime.now();
     DateTime midnight = DateTime(now.year, now.month, now.day + 1);
     Duration timeUntilMidnight = midnight.difference(now);
-    
+
     _midnightTimer = Timer(timeUntilMidnight, () {
+      if (!mounted) return;
       _resetDailySteps();
       _scheduleMidnightReset(); // Schedule next reset
     });
   }
-  
+
   Future<void> _resetDailySteps() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     String today = DateTime.now().toIso8601String().split('T')[0];
     await prefs.setString('step_date', today);
     await prefs.setInt('baseline_steps', 0);
+    if (!mounted) return;
     setState(() {
       _baselineSteps = 0;
       _steps = 0;
     });
   }
 
-  Future<void> _requestLocationPermission() async {
-    LocationPermission permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-    }
-    if (permission == LocationPermission.whileInUse || 
-        permission == LocationPermission.always) {
-      _getCurrentLocation();
+  /// Robust location permission + fetch wrapper.
+  /// If permission is deniedForever, prompts user to open app settings.
+  Future<void> _requestLocationPermissionAndFetch() async {
+    try {
+      LocationPermission permission = await Geolocator.checkPermission();
+
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+
+      if (permission == LocationPermission.deniedForever) {
+        // Show a small dialog asking user to open settings
+        if (!mounted) return;
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text("Location required"),
+            content: const Text(
+                "Location permission is permanently denied. Please enable it in app settings to get local AQI and solar data."),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.of(ctx).pop();
+                },
+                child: const Text("Cancel"),
+              ),
+              TextButton(
+                onPressed: () async {
+                  Navigator.of(ctx).pop();
+                  await openAppSettings();
+                },
+                child: const Text("Open Settings"),
+              ),
+            ],
+          ),
+        );
+        // still try to fetch using default coordinates
+        await _simulateAQI(); // will use current default _location / coords
+        return;
+      }
+
+      if (permission == LocationPermission.whileInUse ||
+          permission == LocationPermission.always) {
+        await _getCurrentLocation();
+      } else {
+        // permission denied - try fetching with default location (Delhi)
+        await _simulateAQI();
+      }
+    } catch (e) {
+      print('Error requesting location permission: $e');
+      await _simulateAQI();
     }
   }
 
@@ -129,19 +177,95 @@ class _HomeScreenState extends State<HomeScreen> {
       Position position = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
       );
+      if (!mounted) return;
       setState(() {
         _location = '${position.latitude}, ${position.longitude}';
       });
-      _simulateAQI();
+      await _simulateAQI(latitude: position.latitude, longitude: position.longitude);
     } catch (e) {
       print('Error getting location: $e');
+      // fallback to default fetch
+      await _simulateAQI();
     }
   }
 
-  void _simulateAQI() {
-    setState(() {
-      _aqiValue = 86; // Change to test: 30 (Good), 75 (Moderate), 120 (Bad)
-    });
+  /// Fetches AQI from Open-Meteo air-quality API using the exact query you provided.
+  /// If lat/lon not provided, uses a default (Delhi).
+  Future<void> _simulateAQI({double? latitude, double? longitude}) async {
+    // keep UI responsive
+    if (!mounted) return;
+    setState(() { /* we won't set loading spinner here to keep UI consistent */ });
+
+    try {
+      final double lat = latitude ?? 28.6139;
+      final double lon = longitude ?? 77.2090;
+
+      // Build date window: last 2 days up to today
+      final DateTime end = DateTime.now();
+      final DateTime start = end.subtract(const Duration(days: 2));
+      final String startDate = start.toIso8601String().split("T")[0];
+      final String endDate = end.toIso8601String().split("T")[0];
+
+      final Uri aqiUri = Uri.https(
+        "air-quality-api.open-meteo.com",
+        "/v1/air-quality",
+        {
+          "latitude": lat.toString(),
+          "longitude": lon.toString(),
+          "hourly": "us_aqi",
+          "timezone": "auto",
+          "start_date": startDate,
+          "end_date": endDate,
+        },
+      );
+
+      debugPrint("Fetching AQI: $aqiUri");
+
+      final response = await http.get(aqiUri).timeout(const Duration(seconds: 12));
+
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> body = jsonDecode(response.body);
+        final hourly = body['hourly'];
+        int? latestAqi;
+
+        if (hourly != null && hourly['us_aqi'] != null) {
+          final List<dynamic> vals = List<dynamic>.from(hourly['us_aqi']);
+          // find last non-null numeric value
+          for (int i = vals.length - 1; i >= 0; i--) {
+            final v = vals[i];
+            if (v == null) continue;
+            if (v is int) {
+              latestAqi = v;
+              break;
+            } else if (v is double) {
+              latestAqi = v.round();
+              break;
+            } else {
+              final parsed = int.tryParse(v.toString());
+              if (parsed != null) {
+                latestAqi = parsed;
+                break;
+              }
+            }
+          }
+        }
+
+        if (!mounted) return;
+        setState(() {
+          _aqiValue = latestAqi ?? _aqiValue;
+        });
+        debugPrint("AQI updated: $_aqiValue");
+      } else {
+        debugPrint("AQI API returned ${response.statusCode}");
+        // keep previous/default _aqiValue
+      }
+    } catch (e) {
+      debugPrint("Error fetching AQI: $e");
+      // ignore and keep current/default _aqiValue
+    } finally {
+      if (!mounted) return;
+      // no global loading flag change here to avoid UI jumps
+    }
   }
 
   Map<String, dynamic> _getAQIInfo() {
@@ -194,6 +318,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 selectedDayPredicate: (day) => isSameDay(_selectedDate, day),
                 calendarFormat: CalendarFormat.month,
                 onDaySelected: (selectedDay, focusedDay) {
+                  if (!mounted) return;
                   setState(() {
                     _selectedDate = selectedDay;
                     _focusedDay = focusedDay;
@@ -221,7 +346,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
   }
-  
+
   String _formatDate(DateTime date) {
     final months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     return '${months[date.month - 1]} ${date.day}, ${date.year}';
@@ -229,14 +354,22 @@ class _HomeScreenState extends State<HomeScreen> {
 
   String _getDayLetter(int weekday) {
     switch (weekday) {
-      case 1: return 'M';
-      case 2: return 'T';
-      case 3: return 'W';
-      case 4: return 'T';
-      case 5: return 'F';
-      case 6: return 'S';
-      case 7: return 'S';
-      default: return '';
+      case 1:
+        return 'M';
+      case 2:
+        return 'T';
+      case 3:
+        return 'W';
+      case 4:
+        return 'T';
+      case 5:
+        return 'F';
+      case 6:
+        return 'S';
+      case 7:
+        return 'S';
+      default:
+        return '';
     }
   }
 
@@ -271,157 +404,156 @@ class _HomeScreenState extends State<HomeScreen> {
         body: SafeArea(
           top: false, // Don't apply SafeArea to top so status bar can be colored
           child: Stack(
-          children: [
-            // Scrollable content
-            Positioned.fill(
-              child: SingleChildScrollView(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildHeader(screenWidth, screenHeight),
-                    
-                    // Live AQI Banner - No space between header and banner
-                    Container(
-                      width: double.infinity,
-                      padding: EdgeInsets.symmetric(
-                        horizontal: screenWidth * 0.04,
-                        vertical: screenHeight * 0.01,
-                      ),
-                      decoration: BoxDecoration(
-                        color: _getAQIInfo()['backgroundColor'], // Dynamic background color
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween, // Space between items
-                        children: [
-                          Row(
-                            children: [
-                              Container(
-                                decoration: BoxDecoration(
-                                  color: _getAQIInfo()['color'],
-                                  shape: BoxShape.circle,
+            children: [
+              // Scrollable content
+              Positioned.fill(
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildHeader(screenWidth, screenHeight),
+
+                      // Live AQI Banner - No space between header and banner
+                      Container(
+                        width: double.infinity,
+                        padding: EdgeInsets.symmetric(
+                          horizontal: screenWidth * 0.04,
+                          vertical: screenHeight * 0.01,
+                        ),
+                        decoration: BoxDecoration(
+                          color: _getAQIInfo()['backgroundColor'], // Dynamic background color
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween, // Space between items
+                          children: [
+                            Row(
+                              children: [
+                                Container(
+                                  width: 14,
+                                  height: 14,
+                                  margin: const EdgeInsets.only(right: 8),
+                                  decoration: BoxDecoration(
+                                    color: _getAQIInfo()['color'],
+                                    shape: BoxShape.circle,
+                                  ),
                                 ),
-                              ),
-                              Text(
-                                'Live AQI',
-
-                                style: TextStyle(
-                                  fontSize: screenWidth * 0.035,
-                                  color: Colors.black87,
-                                  fontWeight: FontWeight.w500,
+                                Text(
+                                  'Live AQI',
+                                  style: TextStyle(
+                                    fontSize: screenWidth * 0.035,
+                                    color: Colors.black87,
+                                    fontWeight: FontWeight.w500,
+                                  ),
                                 ),
+                              ],
+                            ),
+                            Text(
+                              '${_aqiValue}',
+                              style: TextStyle(
+                                fontSize: screenWidth * 0.06,
+                                fontWeight: FontWeight.bold,
+                                color: _getAQIInfo()['color'],
                               ),
-                            ],
-                          ),
-                          Text(
-                            '$_aqiValue',
-                            style: TextStyle(
-                              fontSize: screenWidth * 0.06,
-                              fontWeight: FontWeight.bold,
-                              color: _getAQIInfo()['color'],
                             ),
-                          ),
-                          Text(
-                            _getAQIInfo()['label'],
-                            style: TextStyle(
-                              fontSize: screenWidth * 0.04,
-                              color: Colors.black87,
-                              fontWeight: FontWeight.w600,
+                            Text(
+                              _getAQIInfo()['label'],
+                              style: TextStyle(
+                                fontSize: screenWidth * 0.04,
+                                color: Colors.black87,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
+                          ],
+                        ),
+                      ),
+
+                      SizedBox(height: screenHeight * 0.01),
+
+                      Padding(
+                        padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.04),
+                        child: Text(
+                          "Dashboard",
+                          style: TextStyle(
+                            color: Colors.green.shade900,
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
                           ),
-                        ],
+                        ),
                       ),
-                    ),
-                    
-                    SizedBox(height: screenHeight * 0.01),
-  
-                    Padding(
-                      padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.04),
-                    child: Text(
-                      "Dashboard",
-                      style: TextStyle(
-                        color: Colors.green.shade900,
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
+
+                      SizedBox(height: screenHeight * 0.01),
+
+                      // Energy Summary Card
+                      Padding(
+                        padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.035),
+                        child: _buildEnergySummaryCard(screenWidth, screenHeight),
                       ),
-                    ),
-                  ),
 
-                    SizedBox(height: screenHeight * 0.01),
-                    
-                    // Energy Summary Card
-                    Padding(
-                      padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.035),
-                      child: _buildEnergySummaryCard(screenWidth, screenHeight),
-                    ),
+                      const SizedBox(height: 20),
 
-                    const SizedBox(height: 20),
-
-                    _infoCard(
-                    context,
-                    title: "Discover the energy drain",
-                    description:
-                        "Scan your appliances and track their impact!",
-                    buttonText: "Add now !",
-                    imagePath: "images/Mask.png",
-                    navigateToPage: const EnergyOnboardingPage(),
+                      _infoCard(
+                        context,
+                        title: "Discover the energy drain",
+                        description: "Scan your appliances and track their impact!",
+                        buttonText: "Add now !",
+                        imagePath: "images/Mask.png",
+                        navigateToPage: const EnergyOnboardingPage(),
+                      ),
+                      _infoCard(
+                        context,
+                        title: "Pedal your way to a healthier planet!",
+                        description: "Scan your appliances and track their impact!",
+                        buttonText: "Scan now !",
+                        imagePath: "images/Cycle.png",
+                        navigateToPage: const EnergyOnboardingPage(),
+                      ),
+                      _infoCard(
+                        context,
+                        title: "Add your routine",
+                        description: "Add your routines and see their impact on the environment",
+                        buttonText: "Add now !",
+                        imagePath: "images/Routine.png",
+                      ),
+                      _infoCard(
+                        context,
+                        title: "Harness the power of the sun and wind",
+                        description: "Find out what works for you today",
+                        buttonText: "Scan now !",
+                        imagePath: "images/Sun.png",
+                        navigateToPage: RenewableEnergyEstimation(),
+                      ),
+                      _infoCard(
+                        context,
+                        title: "Join the Green Movement",
+                        description: "Connect, Compete, and Create Change!",
+                        buttonText: "Join now !",
+                        imagePath: "images/Sun.png",
+                      ),
+                      _infoCard(
+                        context,
+                        title: "Test Your Eco IQ",
+                        description: "Play, Learn, and Grow Greener!",
+                        buttonText: "Play now !",
+                        imagePath: "images/Sun.png",
+                      ),
+                    ],
                   ),
-                    _infoCard(
-                    context,
-                    title: "Pedal your way to a healthier planet!",
-                    description:
-                        "Scan your appliances and track their impact!",
-                    buttonText: "Scan now !",
-                    imagePath: "images/Cycle.png",
-                    navigateToPage: const EnergyOnboardingPage(),
-                  ),
-                    _infoCard(
-                    context,
-                    title: "Add your routine",
-                    description:
-                        "Add your routines and see their impact on the environment",
-                    buttonText: "Add now !",
-                    imagePath: "images/Routine.png",
-                  ),
-                    _infoCard(
-                    context,
-                    title: "Harness the power of the sun and wind",
-                    description: "Find out what works for you today",
-                    buttonText: "Scan now !",
-                    imagePath: "images/Sun.png",
-                    navigateToPage: RenewableEnergyEstimation(),
-                  ),
-                    _infoCard(
-                    context,
-                    title: "Join the Green Movement",
-                    description: "Connect, Compete, and Create Change!",
-                    buttonText: "Join now !",
-                    imagePath: "images/Sun.png",
-                  ),
-                    _infoCard(
-                    context,
-                    title: "Test Your Eco IQ",
-                    description: "Play, Learn, and Grow Greener!",
-                    buttonText: "Play now !",
-                    imagePath: "images/Sun.png",
-                  ),
-                  ],
                 ),
               ),
-            ),
 
-            // Fixed Liquid Navbar at BOTTOM
-            Positioned(
-              bottom: 0,
-              left: 0,
-              right: 0,
-              child: LiquidNavbar(
-                currentIndex: _selectedIndex,
-                onItemSelected: _onNavItemSelected,
+              // Fixed Liquid Navbar at BOTTOM
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                child: LiquidNavbar(
+                  currentIndex: _selectedIndex,
+                  onItemSelected: _onNavItemSelected,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
-      ),
       ),
     );
   }
@@ -461,8 +593,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
           ),
-          
-          
+
           // Main content
           Padding(
             padding: EdgeInsets.only(
@@ -518,7 +649,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ],
                 ),
                 // Push welcome text and button to bottom
-                
+
                 // Welcome text
                 const Text(
                   "Hey! Harshil",
@@ -545,7 +676,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     height: 1.4,
                   ),
                 ),
-                
+
                 // "Let's go" button
                 ElevatedButton(
                   onPressed: () {
@@ -608,7 +739,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
             ),
-            
+
             // Custom Calendar matching design - Non-scrollable
             Container(
               height: 75,
@@ -620,9 +751,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   final isSelected = date.day == _selectedDate.day &&
                       date.month == _selectedDate.month &&
                       date.year == _selectedDate.year;
-                  
+
                   return GestureDetector(
                     onTap: () {
+                      if (!mounted) return;
                       setState(() {
                         _selectedDate = date;
                       });
@@ -636,9 +768,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             width: screenWidth * 0.115,
                             height: screenWidth * 0.115,
                             decoration: BoxDecoration(
-                              color: isSelected 
-                                  ? const Color(0xFF1E3A5F) // Dark blue for selected
-                                  : Colors.transparent,
+                              color: isSelected ? const Color(0xFF1E3A5F) : Colors.transparent,
                               shape: BoxShape.circle,
                               border: isSelected
                                   ? Border.all(
@@ -675,7 +805,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 }),
               ),
             ),
-            
+
             // Main row with left content and Mascot
             Row(
               crossAxisAlignment: CrossAxisAlignment.center,
@@ -726,7 +856,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 ),
                               ],
                             ),
-                            
+
                             // Divider
                             Padding(
                               padding: EdgeInsets.symmetric(vertical: screenHeight * 0.008),
@@ -735,7 +865,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 thickness: 1,
                               ),
                             ),
-                            
+
                             // You Saved section
                             Row(
                               mainAxisAlignment: MainAxisAlignment.center,
@@ -773,9 +903,9 @@ class _HomeScreenState extends State<HomeScreen> {
                           ],
                         ),
                       ),
-                      
+
                       SizedBox(height: screenHeight * 0.01),
-                      
+
                       // Steps box
                       Container(
                         width: double.infinity,
@@ -809,9 +939,9 @@ class _HomeScreenState extends State<HomeScreen> {
                     ],
                   ),
                 ),
-                
+
                 SizedBox(width: screenWidth * 0.02),
-                
+
                 // Mascot on the right
                 Container(
                   width: screenWidth * 0.28,
@@ -830,9 +960,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ],
             ),
-            
+
             SizedBox(height: screenHeight * 0.012),
-            
+
             // Bottom message - Centered
             Center(
               child: Text(
@@ -915,9 +1045,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
               ),
-              
+
               const SizedBox(height: 16),
-              
+
               // Title
               Text(
                 title,
@@ -928,9 +1058,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   height: 1.2,
                 ),
               ),
-              
+
               const SizedBox(height: 8),
-              
+
               // Description
               Text(
                 description,
@@ -940,9 +1070,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   height: 1.3,
                 ),
               ),
-              
+
               const SizedBox(height: 16),
-              
+
               // Button
               SizedBox(
                 width: double.infinity,
