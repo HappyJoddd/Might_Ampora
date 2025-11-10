@@ -10,7 +10,8 @@ class RenewableEnergyEstimation extends StatefulWidget {
   const RenewableEnergyEstimation({super.key});
 
   @override
-  State<RenewableEnergyEstimation> createState() => _RenewableEnergyEstimationState();
+  State<RenewableEnergyEstimation> createState() =>
+      _RenewableEnergyEstimationState();
 }
 
 class _RenewableEnergyEstimationState extends State<RenewableEnergyEstimation> {
@@ -20,6 +21,12 @@ class _RenewableEnergyEstimationState extends State<RenewableEnergyEstimation> {
   final TextEditingController _searchController = TextEditingController();
   List<dynamic> _searchSuggestions = [];
   final FocusNode _searchFocusNode = FocusNode();
+
+  bool _isLoading = true;
+  double? _avgSolarKwh;
+  String _solarQuality = "";
+  double? _recentIrradiance;
+  double? _windSpeed;
 
   @override
   void initState() {
@@ -43,7 +50,6 @@ class _RenewableEnergyEstimationState extends State<RenewableEnergyEstimation> {
       });
       return;
     }
-
     if (_searchController.text.length >= 3) {
       _searchLocation(_searchController.text);
     }
@@ -51,16 +57,13 @@ class _RenewableEnergyEstimationState extends State<RenewableEnergyEstimation> {
 
   Future<void> _searchLocation(String query) async {
     try {
-      // Using Nominatim API (OpenStreetMap's free geocoding service)
       final url = Uri.parse(
         'https://nominatim.openstreetmap.org/search?q=$query&format=json&limit=5&addressdetails=1',
       );
 
       final response = await http.get(
         url,
-        headers: {
-          'User-Agent': 'MightAmpora/1.0',
-        },
+        headers: {'User-Agent': 'MightAmpora/1.0'},
       );
 
       if (response.statusCode == 200) {
@@ -86,46 +89,153 @@ class _RenewableEnergyEstimationState extends State<RenewableEnergyEstimation> {
       _searchFocusNode.unfocus();
     });
 
-    // Move map to selected location with offset
     final offsetLat = lat - 0.008;
     _mapController.move(LatLng(offsetLat, lon), 15.0);
+
+    _fetchSolarData(lat, lon);
   }
 
-  Future<void> _getCurrentLocation() async {
-    try {
-      LocationPermission permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-      }
+Future<void> _getCurrentLocation() async {
+  try {
+    LocationPermission permission = await Geolocator.checkPermission();
 
-      if (permission == LocationPermission.whileInUse ||
-          permission == LocationPermission.always) {
-        Position position = await Geolocator.getCurrentPosition(
-          desiredAccuracy: LocationAccuracy.high,
-        );
-
-        setState(() {
-          _currentPosition = LatLng(position.latitude, position.longitude);
-        });
-
-        // Offset the map center to show marker above bottom sheet
-        // Negative offset moves the map view down, showing the marker upward in visible area
-        final offsetLat = _currentPosition.latitude - 0.008;
-        _mapController.move(LatLng(offsetLat, _currentPosition.longitude), 15.0);
-      }
-    } catch (e) {
-      print('Error getting location: $e');
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
     }
+
+    if (permission == LocationPermission.deniedForever) {
+      print('🚫 Location permanently denied. Using default location.');
+      await _fetchSolarData(_currentPosition.latitude, _currentPosition.longitude);
+      return;
+    }
+
+    if (permission == LocationPermission.denied ||
+        permission == LocationPermission.unableToDetermine) {
+      print('⚠️ User denied or unable to determine location.');
+      await _fetchSolarData(_currentPosition.latitude, _currentPosition.longitude);
+      return;
+    }
+
+    if (permission == LocationPermission.whileInUse ||
+        permission == LocationPermission.always) {
+      Position position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+
+      setState(() {
+        _currentPosition = LatLng(position.latitude, position.longitude);
+      });
+
+      final offsetLat = _currentPosition.latitude - 0.008;
+      _mapController.move(
+        LatLng(offsetLat, _currentPosition.longitude),
+        15.0,
+      );
+
+      await _fetchSolarData(position.latitude, position.longitude);
+    }
+  } catch (e) {
+    print('🚨 Error getting location: $e');
+    await _fetchSolarData(_currentPosition.latitude, _currentPosition.longitude);
   }
+}
+
+  /// Fetch solar + wind data from backend or Open-Meteo
+Future<void> _fetchSolarData(double lat, double lon) async {
+  if (!mounted) return;
+  setState(() => _isLoading = true);
+
+  try {
+    print('🌞 Fetching Solar & Wind data for $lat, $lon');
+
+    // Build both Open-Meteo URIs
+    final solarUri = Uri.https('api.open-meteo.com', '/v1/forecast', {
+      'latitude': '$lat',
+      'longitude': '$lon',
+      'daily': 'shortwave_radiation_sum',
+      'timezone': 'auto',
+    });
+
+    final windUri = Uri.https('api.open-meteo.com', '/v1/forecast', {
+      'latitude': '$lat',
+      'longitude': '$lon',
+      'hourly': 'windspeed_10m',
+      'timezone': 'auto',
+    });
+
+    // Fetch both concurrently
+    final responses = await Future.wait([
+      http.get(solarUri),
+      http.get(windUri),
+    ]);
+
+    double? avgSolarKwh;
+    String solarQuality = "Unknown";
+    double? latestWindSpeed;
+
+    // ✅ Parse solar data
+    if (responses[0].statusCode == 200) {
+      final solarData = json.decode(responses[0].body);
+      final daily = solarData['daily'];
+
+      if (daily != null && daily['shortwave_radiation_sum'] != null) {
+        final values = List<double>.from(
+          (daily['shortwave_radiation_sum'] as List)
+              .map((e) => (e ?? 0).toDouble()),
+        );
+        final avg = values.isNotEmpty
+            ? values.reduce((a, b) => a + b) / values.length
+            : 0.0;
+        avgSolarKwh = avg / 3.6; // MJ/m² → kWh/m²/day
+        if (avgSolarKwh >= 5.0) {
+          solarQuality = "High";
+        } else if (avgSolarKwh >= 3.0) {
+          solarQuality = "Medium";
+        } else {
+          solarQuality = "Low";
+        }
+      }
+    } else {
+      print('⚠️ Solar request failed: ${responses[0].statusCode}');
+    }
+
+    // ✅ Parse wind data
+    if (responses[1].statusCode == 200) {
+      final windData = json.decode(responses[1].body);
+      final hourly = windData['hourly'];
+      if (hourly != null && hourly['windspeed_10m'] != null) {
+        final windValues = List<double>.from(
+          (hourly['windspeed_10m'] as List).map((e) => (e ?? 0).toDouble()),
+        );
+        latestWindSpeed =
+            windValues.isNotEmpty ? windValues.last : null; // latest hour value
+      }
+    } else {
+      print('⚠️ Wind request failed: ${responses[1].statusCode}');
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _avgSolarKwh = avgSolarKwh;
+      _solarQuality = solarQuality;
+      _recentIrradiance = avgSolarKwh;
+      _windSpeed = latestWindSpeed;
+      _isLoading = false;
+    });
+
+    print('✅ Solar=${_avgSolarKwh}, Wind=${_windSpeed}');
+  } catch (e) {
+    print('🚨 Error fetching energy data: $e');
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+  }
+}
 
   void _onNavItemSelected(int index) {
     setState(() {
       _selectedNavIndex = index;
     });
-    // Handle navigation based on index
-    if (index == 0) {
-      Navigator.pop(context); // Go back to home
-    }
+    if (index == 0) Navigator.pop(context);
   }
 
   @override
@@ -133,8 +243,6 @@ class _RenewableEnergyEstimationState extends State<RenewableEnergyEstimation> {
     final screenHeight = MediaQuery.of(context).size.height;
     final screenWidth = MediaQuery.of(context).size.width;
 
-    // Offset map center to show marker above bottom sheet
-    // Negative offset moves the map view down, showing the marker upward
     final offsetPosition = LatLng(
       _currentPosition.latitude - 0.008,
       _currentPosition.longitude,
@@ -142,324 +250,129 @@ class _RenewableEnergyEstimationState extends State<RenewableEnergyEstimation> {
 
     return Scaffold(
       resizeToAvoidBottomInset: true,
-      body: GestureDetector(
-        onTap: () {
-          // Dismiss keyboard when tapping outside
-          FocusScope.of(context).unfocus();
-        },
-        child: SingleChildScrollView(
-          physics: const ClampingScrollPhysics(),
-          child: SizedBox(
-            height: screenHeight,
-            child: Stack(
-              children: [
-                // OpenStreetMap Background
-                FlutterMap(
-                  mapController: _mapController,
-                  options: MapOptions(
-                    initialCenter: offsetPosition,
-                    initialZoom: 15.0,
-                    minZoom: 5.0,
-                    maxZoom: 18.0,
-                  ),
-                  children: [
-                    TileLayer(
-                      urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                      userAgentPackageName: 'com.example.might_ampora',
-                      maxZoom: 19,
-                    ),
-                    MarkerLayer(
-                      markers: [
-                        Marker(
-                          point: _currentPosition,
-                          width: 50,
-                          height: 50,
-                          child: Icon(
-                            Icons.location_on,
-                            size: 50,
-                            color: const Color(0xFF2B9A66),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-
-          // Top Header with back button and title
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: Container(
-              padding: EdgeInsets.only(
-                top: MediaQuery.of(context).padding.top + screenHeight * 0.01,
-                bottom: screenHeight * 0.015,
-                left: screenWidth * 0.04,
-                right: screenWidth * 0.04,
-              ),
-              decoration: BoxDecoration(
-                color: Colors.transparent,
-              ),
-              child: Row(
+      body: _isLoading
+          ? const Center(
+              child: CircularProgressIndicator(color: Color(0xFF2B9A66)),
+            )
+          : GestureDetector(
+              onTap: () => FocusScope.of(context).unfocus(),
+              child: Stack(
                 children: [
-                  // Back button
-                  GestureDetector(
-                        onTap: () => Navigator.pop(context),
-                        child: Container(
-                          width: screenWidth * 0.11,
-                          height: screenWidth * 0.11,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: const Color(0xFF2D8B6E),
-                              width: 2,
+                  /// 🌍 Map
+                  FlutterMap(
+                    mapController: _mapController,
+                    options: MapOptions(
+                      initialCenter: offsetPosition,
+                      initialZoom: 15.0,
+                      minZoom: 5.0,
+                      maxZoom: 18.0,
+                    ),
+                    children: [
+                      TileLayer(
+                        urlTemplate:
+                            'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                        userAgentPackageName: 'com.example.might_ampora',
+                        maxZoom: 19,
+                      ),
+                      MarkerLayer(
+                        markers: [
+                          Marker(
+                            point: _currentPosition,
+                            width: 50,
+                            height: 50,
+                            child: const Icon(
+                              Icons.location_on,
+                              size: 50,
+                              color: Color(0xFF2B9A66),
                             ),
-                          ),
-                          child: Icon(
-                            Icons.arrow_back,
-                            color: const Color(0xFF2D8B6E),
-                            size: screenWidth * 0.05,
-                          ),
-                        ),
-                      ),
-                  SizedBox(width: screenWidth * 0.03),
-                  // Title
-                  Expanded(
-                    child: Text(
-                      'Renewable Energy Estimation',
-                      style: TextStyle(
-                        fontSize: screenWidth * 0.045,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.black87,
-                      ),
-                    ),
-                  ),
-                  // Current Location button
-                  GestureDetector(
-                    onTap: () => _getCurrentLocation(),
-                    child: Container(
-                      width: screenWidth * 0.11,
-                      height: screenWidth * 0.11,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                      ),
-                      child: Icon(
-                        Icons.my_location,
-                        color: const Color(0xFF2D8B6E),
-                        size: screenWidth * 0.05,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          // Search bar with autocomplete
-          Positioned(
-            top: MediaQuery.of(context).padding.top + screenHeight * 0.085,
-            left: screenWidth * 0.04,
-            right: screenWidth * 0.04,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                  Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(screenWidth * 0.03),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.1),
-                          blurRadius: 8,
-                          offset: Offset(0, screenHeight * 0.0025),
-                        ),
-                      ],
-                    ),
-                    child: TextField(
-                      controller: _searchController,
-                      focusNode: _searchFocusNode,
-                      decoration: InputDecoration(
-                        hintText: 'Search location...',
-                        hintStyle: TextStyle(
-                          color: Colors.grey[400],
-                          fontSize: screenWidth * 0.04,
-                        ),
-                        prefixIcon: Icon(
-                          Icons.search,
-                          color: Colors.grey[400],
-                        ),
-                        suffixIcon: _searchController.text.isNotEmpty
-                            ? IconButton(
-                                icon: Icon(
-                                  Icons.clear,
-                                  color: Colors.grey[400],
-                                ),
-                                onPressed: () {
-                                  _searchController.clear();
-                                  setState(() {
-                                    _searchSuggestions = [];
-                                  });
-                                },
-                              )
-                            : null,
-                        border: InputBorder.none,
-                        contentPadding: EdgeInsets.symmetric(
-                          horizontal: screenWidth * 0.04,
-                          vertical: screenHeight * 0.017,
-                        ),
-                      ),
-                    ),
-                  ),
-                  // Search suggestions dropdown
-                  if (_searchSuggestions.isNotEmpty)
-                    Container(
-                      margin: EdgeInsets.only(top: screenHeight * 0.01),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(screenWidth * 0.03),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.1),
-                            blurRadius: 8,
-                            offset: Offset(0, screenHeight * 0.0025),
                           ),
                         ],
                       ),
-                      constraints: BoxConstraints(
-                        maxHeight: screenHeight * 0.35,
-                      ),
-                      child: ListView.builder(
-                        shrinkWrap: true,
-                        padding: EdgeInsets.zero,
-                        physics: const ClampingScrollPhysics(),
-                        itemCount: _searchSuggestions.length,
-                        itemBuilder: (context, index) {
-                          final suggestion = _searchSuggestions[index];
-                          return ListTile(
-                            leading: Icon(
-                              Icons.location_on,
-                              color: const Color(0xFF2B9A66),
-                              size: screenWidth * 0.05,
-                            ),
-                            title: Text(
-                              suggestion['display_name'] ?? '',
-                              style: TextStyle(
-                                fontSize: screenWidth * 0.035,
-                                color: Colors.black87,
-                              ),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            onTap: () => _selectLocation(suggestion),
-                          );
-                        },
-                      ),
-                    ),
-              ],
-            ),
-          ),
-
-          // Bottom sheet with energy details
-          Positioned(
-            bottom: 0,
-            left: screenWidth * 0.04,
-            right: screenWidth * 0.04,
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.only(
-                  topLeft: Radius.circular(screenWidth * 0.06),
-                  topRight: Radius.circular(screenWidth * 0.06),
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
-                    blurRadius: 10,
-                    offset: Offset(0, screenHeight * -0.0025),
-                  ),
-                ],
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Handle bar
-                  Container(
-                    margin: EdgeInsets.only(top: screenHeight * 0.015),
-                    width: screenWidth * 0.1,
-                    height: screenHeight * 0.005,
-                    decoration: BoxDecoration(
-                      color: Colors.grey[300],
-                      borderRadius: BorderRadius.circular(2),
-                    ),
+                    ],
                   ),
 
-                  Padding(
-                    padding: EdgeInsets.symmetric(
-                      horizontal: screenWidth * 0.05,
-                      vertical: screenHeight * 0.02,
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Title
-                        Text(
-                          'Energy Consumption',
-                          style: TextStyle(
-                            fontSize: screenWidth * 0.055,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.black,
+                  /// ☀️ Bottom sheet with live data
+                  Positioned(
+                    bottom: 0,
+                    left: screenWidth * 0.04,
+                    right: screenWidth * 0.04,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.only(
+                          topLeft: Radius.circular(screenWidth * 0.06),
+                          topRight: Radius.circular(screenWidth * 0.06),
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.1),
+                            blurRadius: 10,
                           ),
+                        ],
+                      ),
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: screenWidth * 0.05,
+                          vertical: screenHeight * 0.02,
                         ),
-
-
-                        // Sunlight Hours Card
-                        _buildEnergyCard(
-                          context: context,
-                          title: 'Sunlight Hours',
-                          value: '12hrs /day',
-                          subtitle: 'Daily average\nsunlight hours',
-                          description:
-                              'Your location gets enough sunlight for solar power! Install a solar system to cut electricity bills, generate clean energy, and support a sustainable future.',
-                          valueColor: const Color(0xFF2B9A66),
-                          icon: Icons.wb_sunny,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'Energy Estimation',
+                              style: TextStyle(
+                                fontSize: screenWidth * 0.055,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            _buildEnergyCard(
+                              context: context,
+                              title: 'Solar Irradiance',
+                              value: _avgSolarKwh != null
+                                  ? "${_avgSolarKwh!.toStringAsFixed(2)} kWh/m²/day"
+                                  : '-',
+                              subtitle: _solarQuality.isNotEmpty
+                                  ? _solarQuality
+                                  : 'Unknown',
+                              description:
+                                  'Based on Open-Meteo data, this represents the daily solar potential for your area.',
+                              valueColor: const Color(0xFF2B9A66),
+                              icon: Icons.wb_sunny,
+                            ),
+                            _buildEnergyCard(
+                              context: context,
+                              title: 'Wind Potential',
+                              value: _windSpeed != null
+                                  ? "${_windSpeed!.toStringAsFixed(1)} m/s"
+                                  : '-',
+                              subtitle: 'Average windspeed',
+                              description:
+                                  'Estimated wind speed from Open-Meteo near your location.',
+                              valueColor: const Color(0xFFEF5F00),
+                              icon: Icons.air,
+                            ),
+                            SizedBox(height: screenHeight * 0.1),
+                          ],
                         ),
+                      ),
+                    ),
+                  ),
 
-                        // Wind Potential Card
-                        _buildEnergyCard(
-                          context: context,
-                          title: 'Wind Potential',
-                          value: '1.7 m/s',
-                          subtitle: 'wind speed',
-                          description:
-                              'The average wind speed at your location is too low for efficient wind power generation.',
-                          valueColor: const Color(0xFFEF5F00),
-                          icon: Icons.air,
-                        ),
-
-                        SizedBox(height: screenHeight * 0.1), // Space for navbar
-                      ],
+                  /// 🌊 Navbar
+                  Positioned(
+                    bottom: screenHeight * 0.025,
+                    left: 0,
+                    right: 0,
+                    child: LiquidNavbar(
+                      currentIndex: _selectedNavIndex,
+                      onItemSelected: _onNavItemSelected,
                     ),
                   ),
                 ],
               ),
             ),
-          ),
-
-          // Bottom Navigation Bar
-          Positioned(
-            bottom: screenHeight * 0.025,
-            left: 0,
-            right: 0,
-            child: LiquidNavbar(
-              currentIndex: _selectedNavIndex,
-              onItemSelected: _onNavItemSelected,
-            ),
-          ),
-              ],
-            ),
-          ),
-        ),
-      ),
     );
   }
 
@@ -484,7 +397,6 @@ class _RenewableEnergyEstimationState extends State<RenewableEnergyEstimation> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Title
           Text(
             title,
             style: TextStyle(
@@ -493,18 +405,10 @@ class _RenewableEnergyEstimationState extends State<RenewableEnergyEstimation> {
               color: Colors.black,
             ),
           ),
-
           SizedBox(height: screenHeight * 0.015),
-
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Left side - Value and subtitle in box
-              // Width is half of bottom sheet content width
-              // Bottom sheet width = screenWidth - (2 * margin) - (2 * padding)
-              // = screenWidth - (2 * 0.04 * screenWidth) - (2 * 0.05 * screenWidth)
-              // = screenWidth * (1 - 0.08 - 0.10) = screenWidth * 0.82
-              // Half of that = screenWidth * 0.41
               Container(
                 width: (screenWidth * 0.82) / 2,
                 padding: EdgeInsets.symmetric(
@@ -521,28 +425,23 @@ class _RenewableEnergyEstimationState extends State<RenewableEnergyEstimation> {
                     Text(
                       value,
                       style: TextStyle(
-                        fontSize: screenWidth * 0.06,
+                        fontSize: screenWidth * 0.055,
                         fontWeight: FontWeight.bold,
                         color: valueColor,
                       ),
                     ),
-                    SizedBox(height: screenHeight * 0.005),
                     Text(
                       subtitle,
                       textAlign: TextAlign.center,
                       style: TextStyle(
-                        fontSize: screenWidth * 0.035,
-                        fontWeight: FontWeight.w400,
+                        fontSize: screenWidth * 0.034,
                         color: Colors.black,
                       ),
                     ),
                   ],
                 ),
               ),
-
               SizedBox(width: screenWidth * 0.04),
-
-              // Right side - Description
               Expanded(
                 child: Text(
                   description,

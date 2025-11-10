@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'Otp.dart';
+import 'package:might_ampora/services/auth_storage.dart';
+import 'package:might_ampora/services/api_service.dart';
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
@@ -12,8 +13,9 @@ class _RegisterPageState extends State<RegisterPage> {
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _locationController = TextEditingController();
-  
+
   final _formKey = GlobalKey<FormState>();
+  bool _isLoading = false;
 
   @override
   void dispose() {
@@ -22,6 +24,83 @@ class _RegisterPageState extends State<RegisterPage> {
     _locationController.dispose();
     super.dispose();
   }
+
+  /// 🧩 Handles registration locally + backend sync (if API live)
+Future<void> _handleRegistration() async {
+  if (!_formKey.currentState!.validate()) return;
+
+  setState(() => _isLoading = true);
+
+  try {
+    final name = _nameController.text.trim();
+    final email = _emailController.text.trim();
+    final location = _locationController.text.trim();
+    final phone = await AuthStorage.getUserNumber();
+
+    if (phone == null || phone.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("⚠️ Missing phone number. Please login again.")),
+      );
+      return;
+    }
+
+    // 🔹 Call backend to sign in or register user
+    final result = await ApiService.signInWithOTP(
+      phone: phone,
+      name: name,
+      email: email,
+      location: location,
+    );
+
+    if (result['success'] == true) {
+      final data = result['data'] ?? {};
+      final user = data['user'] ?? {};
+
+      final accessToken = data['accessToken'] ?? '';
+      final refreshToken = data['refreshToken'] ?? '';
+
+      // 🔒 Save tokens & mark as logged in
+      if (accessToken.isNotEmpty && refreshToken.isNotEmpty) {
+        await AuthStorage.saveTokens(
+          accessToken: accessToken,
+          refreshToken: refreshToken,
+        );
+      }
+
+      // 🧾 Save user details locally
+      await AuthStorage.saveUserDetails(
+        name: user['name'] ?? name,
+        email: user['email'] ?? email,
+        phone: phone,
+        location: location,
+      );
+
+      // 🟢 Mark as registered and logged in
+      await AuthStorage.setHasRegistered(true);
+      await AuthStorage.setLoggedIn(true);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("✅ Registration successful! Welcome.")),
+      );
+
+      // 🏡 ✅ Go directly to Home Page
+      if (!mounted) return;
+      Navigator.pushNamedAndRemoveUntil(context, '/home', (route) => false);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("❌ Failed: ${result['error'] ?? 'Registration failed'}"),
+        ),
+      );
+    }
+  } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text("🚨 Error during registration: $e")),
+    );
+  } finally {
+    setState(() => _isLoading = false);
+  }
+}
 
   @override
   Widget build(BuildContext context) {
@@ -42,10 +121,9 @@ class _RegisterPageState extends State<RegisterPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Top spacing
                   SizedBox(height: screenHeight * 0.02),
-                  
-                  // App Name
+
+                  /// App name
                   Center(
                     child: RichText(
                       text: TextSpan(
@@ -55,7 +133,7 @@ class _RegisterPageState extends State<RegisterPage> {
                             style: TextStyle(
                               fontSize: screenWidth * 0.08,
                               fontWeight: FontWeight.w400,
-                              color: Color(0xFFEF5F00), // Orange
+                              color: const Color(0xFFEF5F00),
                             ),
                           ),
                           TextSpan(
@@ -63,17 +141,16 @@ class _RegisterPageState extends State<RegisterPage> {
                             style: TextStyle(
                               fontSize: screenWidth * 0.08,
                               fontWeight: FontWeight.w400,
-                              color: Color(0xFF2B9A66), // Green
+                              color: const Color(0xFF2B9A66),
                             ),
                           ),
                         ],
                       ),
                     ),
                   ),
-                  
+
                   SizedBox(height: screenHeight * 0.04),
-                  
-                  // Profile setup title
+
                   Text(
                     'Profile setup',
                     style: TextStyle(
@@ -82,10 +159,10 @@ class _RegisterPageState extends State<RegisterPage> {
                       color: Colors.black,
                     ),
                   ),
-                  
+
                   SizedBox(height: screenHeight * 0.03),
-                  
-                  // Your Name field
+
+                  /// Name
                   Text(
                     'Your Name',
                     style: TextStyle(
@@ -109,30 +186,22 @@ class _RegisterPageState extends State<RegisterPage> {
                         borderRadius: BorderRadius.circular(12),
                         borderSide: BorderSide(color: Colors.grey[300]!),
                       ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide(color: Colors.grey[300]!),
-                      ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide(color: Color(0xFFEF5F00), width: 2),
+                        borderSide: const BorderSide(color: Color(0xFFEF5F00), width: 2),
                       ),
                       contentPadding: EdgeInsets.symmetric(
                         horizontal: screenWidth * 0.04,
                         vertical: screenHeight * 0.02,
                       ),
                     ),
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return 'Please enter your name';
-                      }
-                      return null;
-                    },
+                    validator: (value) =>
+                        value == null || value.isEmpty ? 'Please enter your name' : null,
                   ),
-                  
+
                   SizedBox(height: screenHeight * 0.025),
-                  
-                  // Email field
+
+                  /// Email
                   Text(
                     'Email',
                     style: TextStyle(
@@ -157,13 +226,9 @@ class _RegisterPageState extends State<RegisterPage> {
                         borderRadius: BorderRadius.circular(12),
                         borderSide: BorderSide(color: Colors.grey[300]!),
                       ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide(color: Colors.grey[300]!),
-                      ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide(color: Color(0xFFEF5F00), width: 2),
+                        borderSide: const BorderSide(color: Color(0xFFEF5F00), width: 2),
                       ),
                       contentPadding: EdgeInsets.symmetric(
                         horizontal: screenWidth * 0.04,
@@ -180,10 +245,10 @@ class _RegisterPageState extends State<RegisterPage> {
                       return null;
                     },
                   ),
-                  
+
                   SizedBox(height: screenHeight * 0.025),
-                  
-                  // Current Location field
+
+                  /// Location
                   Text(
                     'Current Location',
                     style: TextStyle(
@@ -207,52 +272,29 @@ class _RegisterPageState extends State<RegisterPage> {
                         borderRadius: BorderRadius.circular(12),
                         borderSide: BorderSide(color: Colors.grey[300]!),
                       ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide(color: Colors.grey[300]!),
-                      ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
-                        borderSide: BorderSide(color: Color(0xFFEF5F00), width: 2),
+                        borderSide: const BorderSide(color: Color(0xFFEF5F00), width: 2),
                       ),
                       contentPadding: EdgeInsets.symmetric(
                         horizontal: screenWidth * 0.04,
                         vertical: screenHeight * 0.02,
                       ),
                     ),
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return 'Please enter your location';
-                      }
-                      return null;
-                    },
+                    validator: (value) =>
+                        value == null || value.isEmpty ? 'Please enter your location' : null,
                   ),
-                  
+
                   SizedBox(height: screenHeight * 0.04),
-                  
-                  // Next Button
-                  Container(
+
+                  /// Next Button
+                  SizedBox(
                     width: double.infinity,
                     height: screenHeight * 0.065,
                     child: ElevatedButton(
-                      onPressed: () {
-                        if (_formKey.currentState!.validate()) {
-                          // Process the registration
-                          print('Name: ${_nameController.text}');
-                          print('Email: ${_emailController.text}');
-                          print('Location: ${_locationController.text}');
-                          
-                          // Navigate to OTP page
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => const OTPpage(),
-                            ),
-                          );
-                        }
-                      },
+                      onPressed: !_isLoading ? _handleRegistration : null,
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: Color(0xFFF59E0B), // Orange color
+                        backgroundColor: const Color(0xFFF59E0B),
                         foregroundColor: Colors.white,
                         elevation: 0,
                         shape: RoundedRectangleBorder(
@@ -260,7 +302,7 @@ class _RegisterPageState extends State<RegisterPage> {
                         ),
                       ),
                       child: Text(
-                        'Next',
+                        _isLoading ? 'Saving...' : 'Next',
                         style: TextStyle(
                           fontSize: screenWidth * 0.045,
                           fontWeight: FontWeight.w600,
@@ -268,7 +310,7 @@ class _RegisterPageState extends State<RegisterPage> {
                       ),
                     ),
                   ),
-                  
+
                   SizedBox(height: screenHeight * 0.02),
                 ],
               ),

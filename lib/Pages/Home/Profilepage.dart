@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:might_ampora/Pages/Components/LiquidNavbar.dart';
 import 'package:might_ampora/Pages/Home/HomeScreen.dart';
+import 'package:might_ampora/services/api_service.dart';
+import 'package:might_ampora/services/auth_storage.dart';
+import 'package:might_ampora/Routes/routes_name.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({Key? key}) : super(key: key);
@@ -12,6 +15,34 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   int _currentIndex = 2; // Profile is at index 2
+Future<void> _handleLogout() async {
+  try {
+    // Retrieve refresh token before clearing
+    final refreshToken = await AuthStorage.getRefreshToken();
+
+    // 🔹 Call backend logout endpoint
+    await ApiService.logout(refreshToken);
+
+    // 🔸 Locally clear auth tokens but keep hasRegistered = true
+    await AuthStorage.logout();
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("👋 Logged out successfully.")),
+    );
+
+    // 🔁 Navigate to login & clear navigation stack
+    Navigator.pushNamedAndRemoveUntil(
+      context,
+      RouteName.login,
+      (route) => false,
+    );
+  } catch (e) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text("🚨 Logout failed: $e")));
+  }
+}
 
   @override
   Widget build(BuildContext context) {
@@ -93,7 +124,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   // User info
                                   Expanded(
                                     child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: [
                                         Text(
                                           'Harshit Bhandari',
@@ -152,7 +184,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ),
                     ),
                   ),
-                  
+
                   // My Energy Summary section
                   Padding(
                     padding: EdgeInsets.all(screenWidth * 0.04),
@@ -168,7 +200,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ),
                         ),
                         SizedBox(height: screenHeight * 0.02),
-                        
+
                         // Stats grid
                         Row(
                           children: [
@@ -221,9 +253,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             ),
                           ],
                         ),
-                        
+
                         SizedBox(height: screenHeight * 0.03),
-                        
+
                         // Preferences & Settings section
                         Text(
                           'Preferences & Settings',
@@ -234,18 +266,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ),
                         ),
                         SizedBox(height: screenHeight * 0.02),
-                        
+
                         // Edit login info
                         _buildSettingItem(
                           screenWidth,
-                          'Edit login info',
+                          'Log-out',
                           Icons.arrow_forward_ios,
-                          () {
-                            // Handle edit login info
-                          },
+                          _handleLogout,
                         ),
+
                         SizedBox(height: screenHeight * 0.015),
-                        
+
                         // Log-out
                         _buildSettingItem(
                           screenWidth,
@@ -255,7 +286,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             // Handle logout
                           },
                         ),
-                        
+
                         // Add bottom padding for navbar
                         SizedBox(height: screenHeight * 0.15),
                       ],
@@ -264,7 +295,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ],
               ),
             ),
-            
+
             // Bottom Navigation Bar
             Positioned(
               bottom: 0,
@@ -277,7 +308,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   if (index == 0) {
                     Navigator.pushReplacement(
                       context,
-                      MaterialPageRoute(builder: (context) => const HomeScreen()),
+                      MaterialPageRoute(
+                        builder: (context) => const HomeScreen(),
+                      ),
                     );
                   }
                 },
@@ -381,11 +414,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 color: Color(0xFFFFA726),
                 shape: BoxShape.circle,
               ),
-              child: Icon(
-                icon,
-                color: Colors.white,
-                size: screenWidth * 0.04,
-              ),
+              child: Icon(icon, color: Colors.white, size: screenWidth * 0.04),
             ),
           ],
         ),
