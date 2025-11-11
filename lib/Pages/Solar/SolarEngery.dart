@@ -95,141 +95,152 @@ class _RenewableEnergyEstimationState extends State<RenewableEnergyEstimation> {
     _fetchSolarData(lat, lon);
   }
 
-Future<void> _getCurrentLocation() async {
-  try {
-    LocationPermission permission = await Geolocator.checkPermission();
+  Future<void> _getCurrentLocation() async {
+    try {
+      LocationPermission permission = await Geolocator.checkPermission();
 
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-    }
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
 
-    if (permission == LocationPermission.deniedForever) {
-      print('🚫 Location permanently denied. Using default location.');
-      await _fetchSolarData(_currentPosition.latitude, _currentPosition.longitude);
-      return;
-    }
+      if (permission == LocationPermission.deniedForever) {
+        print('🚫 Location permanently denied. Using default location.');
+        await _fetchSolarData(
+          _currentPosition.latitude,
+          _currentPosition.longitude,
+        );
+        return;
+      }
 
-    if (permission == LocationPermission.denied ||
-        permission == LocationPermission.unableToDetermine) {
-      print('⚠️ User denied or unable to determine location.');
-      await _fetchSolarData(_currentPosition.latitude, _currentPosition.longitude);
-      return;
-    }
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.unableToDetermine) {
+        print('⚠️ User denied or unable to determine location.');
+        await _fetchSolarData(
+          _currentPosition.latitude,
+          _currentPosition.longitude,
+        );
+        return;
+      }
 
-    if (permission == LocationPermission.whileInUse ||
-        permission == LocationPermission.always) {
-      Position position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
+      if (permission == LocationPermission.whileInUse ||
+          permission == LocationPermission.always) {
+        Position position = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.high,
+        );
+
+        setState(() {
+          _currentPosition = LatLng(position.latitude, position.longitude);
+        });
+
+        final offsetLat = _currentPosition.latitude - 0.008;
+        _mapController.move(
+          LatLng(offsetLat, _currentPosition.longitude),
+          15.0,
+        );
+
+        await _fetchSolarData(position.latitude, position.longitude);
+      }
+    } catch (e) {
+      print('🚨 Error getting location: $e');
+      await _fetchSolarData(
+        _currentPosition.latitude,
+        _currentPosition.longitude,
       );
-
-      setState(() {
-        _currentPosition = LatLng(position.latitude, position.longitude);
-      });
-
-      final offsetLat = _currentPosition.latitude - 0.008;
-      _mapController.move(
-        LatLng(offsetLat, _currentPosition.longitude),
-        15.0,
-      );
-
-      await _fetchSolarData(position.latitude, position.longitude);
     }
-  } catch (e) {
-    print('🚨 Error getting location: $e');
-    await _fetchSolarData(_currentPosition.latitude, _currentPosition.longitude);
   }
-}
 
   /// Fetch solar + wind data from backend or Open-Meteo
-Future<void> _fetchSolarData(double lat, double lon) async {
-  if (!mounted) return;
-  setState(() => _isLoading = true);
+  Future<void> _fetchSolarData(double lat, double lon) async {
+    if (!mounted) return;
+    setState(() => _isLoading = true);
 
-  try {
-    print('🌞 Fetching Solar & Wind data for $lat, $lon');
+    try {
+      print('🌞 Fetching Solar & Wind data for $lat, $lon');
 
-    // Build both Open-Meteo URIs
-    final solarUri = Uri.https('api.open-meteo.com', '/v1/forecast', {
-      'latitude': '$lat',
-      'longitude': '$lon',
-      'daily': 'shortwave_radiation_sum',
-      'timezone': 'auto',
-    });
+      // Build both Open-Meteo URIs
+      final solarUri = Uri.https('api.open-meteo.com', '/v1/forecast', {
+        'latitude': '$lat',
+        'longitude': '$lon',
+        'daily': 'shortwave_radiation_sum',
+        'timezone': 'auto',
+      });
 
-    final windUri = Uri.https('api.open-meteo.com', '/v1/forecast', {
-      'latitude': '$lat',
-      'longitude': '$lon',
-      'hourly': 'windspeed_10m',
-      'timezone': 'auto',
-    });
+      final windUri = Uri.https('api.open-meteo.com', '/v1/forecast', {
+        'latitude': '$lat',
+        'longitude': '$lon',
+        'hourly': 'windspeed_10m',
+        'timezone': 'auto',
+      });
 
-    // Fetch both concurrently
-    final responses = await Future.wait([
-      http.get(solarUri),
-      http.get(windUri),
-    ]);
+      // Fetch both concurrently
+      final responses = await Future.wait([
+        http.get(solarUri),
+        http.get(windUri),
+      ]);
 
-    double? avgSolarKwh;
-    String solarQuality = "Unknown";
-    double? latestWindSpeed;
+      double? avgSolarKwh;
+      String solarQuality = "Unknown";
+      double? latestWindSpeed;
 
-    // ✅ Parse solar data
-    if (responses[0].statusCode == 200) {
-      final solarData = json.decode(responses[0].body);
-      final daily = solarData['daily'];
+      // ✅ Parse solar data
+      if (responses[0].statusCode == 200) {
+        final solarData = json.decode(responses[0].body);
+        final daily = solarData['daily'];
 
-      if (daily != null && daily['shortwave_radiation_sum'] != null) {
-        final values = List<double>.from(
-          (daily['shortwave_radiation_sum'] as List)
-              .map((e) => (e ?? 0).toDouble()),
-        );
-        final avg = values.isNotEmpty
-            ? values.reduce((a, b) => a + b) / values.length
-            : 0.0;
-        avgSolarKwh = avg / 3.6; // MJ/m² → kWh/m²/day
-        if (avgSolarKwh >= 5.0) {
-          solarQuality = "High";
-        } else if (avgSolarKwh >= 3.0) {
-          solarQuality = "Medium";
-        } else {
-          solarQuality = "Low";
+        if (daily != null && daily['shortwave_radiation_sum'] != null) {
+          final values = List<double>.from(
+            (daily['shortwave_radiation_sum'] as List).map(
+              (e) => (e ?? 0).toDouble(),
+            ),
+          );
+          final avg = values.isNotEmpty
+              ? values.reduce((a, b) => a + b) / values.length
+              : 0.0;
+          avgSolarKwh = avg / 3.6; // MJ/m² → kWh/m²/day
+          if (avgSolarKwh >= 5.0) {
+            solarQuality = "High";
+          } else if (avgSolarKwh >= 3.0) {
+            solarQuality = "Medium";
+          } else {
+            solarQuality = "Low";
+          }
         }
+      } else {
+        print('⚠️ Solar request failed: ${responses[0].statusCode}');
       }
-    } else {
-      print('⚠️ Solar request failed: ${responses[0].statusCode}');
-    }
 
-    // ✅ Parse wind data
-    if (responses[1].statusCode == 200) {
-      final windData = json.decode(responses[1].body);
-      final hourly = windData['hourly'];
-      if (hourly != null && hourly['windspeed_10m'] != null) {
-        final windValues = List<double>.from(
-          (hourly['windspeed_10m'] as List).map((e) => (e ?? 0).toDouble()),
-        );
-        latestWindSpeed =
-            windValues.isNotEmpty ? windValues.last : null; // latest hour value
+      // ✅ Parse wind data
+      if (responses[1].statusCode == 200) {
+        final windData = json.decode(responses[1].body);
+        final hourly = windData['hourly'];
+        if (hourly != null && hourly['windspeed_10m'] != null) {
+          final windValues = List<double>.from(
+            (hourly['windspeed_10m'] as List).map((e) => (e ?? 0).toDouble()),
+          );
+          latestWindSpeed = windValues.isNotEmpty
+              ? windValues.last
+              : null; // latest hour value
+        }
+      } else {
+        print('⚠️ Wind request failed: ${responses[1].statusCode}');
       }
-    } else {
-      print('⚠️ Wind request failed: ${responses[1].statusCode}');
+
+      if (!mounted) return;
+      setState(() {
+        _avgSolarKwh = avgSolarKwh;
+        _solarQuality = solarQuality;
+        _recentIrradiance = avgSolarKwh;
+        _windSpeed = latestWindSpeed;
+        _isLoading = false;
+      });
+
+      print('✅ Solar=${_avgSolarKwh}, Wind=${_windSpeed}');
+    } catch (e) {
+      print('🚨 Error fetching energy data: $e');
+      if (!mounted) return;
+      setState(() => _isLoading = false);
     }
-
-    if (!mounted) return;
-    setState(() {
-      _avgSolarKwh = avgSolarKwh;
-      _solarQuality = solarQuality;
-      _recentIrradiance = avgSolarKwh;
-      _windSpeed = latestWindSpeed;
-      _isLoading = false;
-    });
-
-    print('✅ Solar=${_avgSolarKwh}, Wind=${_windSpeed}');
-  } catch (e) {
-    print('🚨 Error fetching energy data: $e');
-    if (!mounted) return;
-    setState(() => _isLoading = false);
   }
-}
 
   void _onNavItemSelected(int index) {
     setState(() {
@@ -336,11 +347,23 @@ Future<void> _fetchSolarData(double lat, double lon) async {
                               subtitle: _solarQuality.isNotEmpty
                                   ? _solarQuality
                                   : 'Unknown',
-                              description:
-                                  'Based on Open-Meteo data, this represents the daily solar potential for your area.',
-                              valueColor: const Color(0xFF2B9A66),
+                              description: _avgSolarKwh != null
+                                  ? (_avgSolarKwh! >= 4.0
+                                        ? 'High solar potential for this location — suitable for commercial or residential PV systems.'
+                                        : 'Low solar potential for this location — consider site-specific assessment before sizing a PV system.')
+                                  : 'Solar potential data is not available for the selected location.',
+                              valueColor: _avgSolarKwh == null
+                                  ? Colors.grey
+                                  : (_avgSolarKwh! >= 4.0
+                                        ? const Color(
+                                            0xFF2B9A66,
+                                          ) // 🟩 Green for good potential
+                                        : const Color(
+                                            0xFFE53935,
+                                          )), // 🟥 Red for low potential
                               icon: Icons.wb_sunny,
                             ),
+
                             _buildEnergyCard(
                               context: context,
                               title: 'Wind Potential',
@@ -348,11 +371,23 @@ Future<void> _fetchSolarData(double lat, double lon) async {
                                   ? "${_windSpeed!.toStringAsFixed(1)} m/s"
                                   : '-',
                               subtitle: 'Average windspeed',
-                              description:
-                                  'Estimated wind speed from Open-Meteo near your location.',
-                              valueColor: const Color(0xFFEF5F00),
+                              description: _windSpeed != null
+                                  ? (_windSpeed! >= 5.0
+                                        ? 'Strong wind potential — viable for wind or hybrid systems.'
+                                        : 'Weak wind potential — may not be suitable for standalone wind power generation.')
+                                  : 'Wind potential data is not available for the selected location.',
+                              valueColor: _windSpeed == null
+                                  ? Colors.grey
+                                  : (_windSpeed! >= 5.0
+                                        ? const Color(
+                                            0xFF2B9A66,
+                                          ) // 🟩 Green for strong potential
+                                        : const Color(
+                                            0xFFE53935,
+                                          )), // 🟥 Red for weak potential
                               icon: Icons.air,
                             ),
+
                             SizedBox(height: screenHeight * 0.1),
                           ],
                         ),
