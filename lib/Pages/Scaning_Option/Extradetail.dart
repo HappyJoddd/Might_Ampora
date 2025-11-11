@@ -230,30 +230,43 @@ class _ExtraDetailPageState extends State<ExtraDetailPage> {
   }
 
   /// ✅ Safely parse backend data
-  void _parseBackendData() {
-    try {
-      dynamic parsed =
-          widget.data is String ? jsonDecode(widget.data) : widget.data;
+void _parseBackendData() {
+  try {
+    dynamic parsed = widget.data is String ? jsonDecode(widget.data) : widget.data;
 
-      if (parsed is! Map) {
-        debugPrint("❌ Data is not a Map");
-        return;
-      }
-
-      Map<String, dynamic> data = Map<String, dynamic>.from(parsed);
-      debugPrint("✅ Parsed data: $data");
-
-      setState(() {
-        mainName = data["mainName"]?.toString() ?? "Unknown Appliance";
-        brand = data["mainBrand"]?.toString() ?? "";
-      });
-
-      debugPrint("✅ FINAL mainName: $mainName");
-      debugPrint("✅ FINAL brand: $brand");
-    } catch (e, st) {
-      debugPrint("❌ Error parsing backend data: $e\n$st");
+    if (parsed is! Map) {
+      debugPrint("❌ Data is not a Map");
+      return;
     }
+
+    debugPrint("✅ Raw backend data: $parsed");
+
+    // Extract nested "data" object
+    Map<String, dynamic> innerData = {};
+    if (parsed.containsKey("data")) {
+      innerData = Map<String, dynamic>.from(parsed["data"]);
+    }
+
+    setState(() {
+      mainName = innerData["mainName"]?.toString() ?? "Unknown Appliance";
+      brand = innerData["mainBrand"]?.toString() ?? "";
+      String? rating = innerData["starRating"]?.toString();
+
+      if (rating != null && rating != "Not Visible") {
+        // Try to parse numeric star rating
+        selectedStarRating = int.tryParse(rating) ?? 3;
+      } else {
+        selectedStarRating = 0; // Handle 'Not Visible'
+      }
+    });
+
+    debugPrint("✅ FINAL mainName: $mainName");
+    debugPrint("✅ FINAL brand: $brand");
+    debugPrint("✅ FINAL star rating: $selectedStarRating");
+  } catch (e, st) {
+    debugPrint("❌ Error parsing backend data: $e\n$st");
   }
+}
 
   Widget _buildLabel(String label) => Padding(
         padding: const EdgeInsets.only(bottom: 8),
