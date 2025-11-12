@@ -25,11 +25,17 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> {
     final screenWidth = MediaQuery.of(context).size.width;
 
     // Extract passed data safely
-    final deviceName = widget.data["deviceName"]?.toString() ?? "Unknown Appliance";
+    final deviceName =
+        widget.data["deviceName"]?.toString() ?? "Unknown Appliance";
     final brand = widget.data["brand"]?.toString() ?? "Unknown Brand";
-    final powerRating = widget.data["powerRating"]?.toString() ?? "Not provided";
+    final powerRating =
+        widget.data["powerRating"]?.toString() ?? "Not provided";
     final usageHours = widget.data["usageHours"]?.toString() ?? "Not provided";
     final beeRating = widget.data["beeRating"]?.toString() ?? "Not detected";
+    final dailyConsumption = widget.data["dailyConsumption"]?.toString() ?? "0";
+    final monthlyCost = widget.data["monthlyCost"]?.toString() ?? "0";
+    final co2PerDay = widget.data["co2PerDay"]?.toString() ?? "0";
+    final perUnitCost = widget.data["perUnitCost"]?.toString() ?? "6";
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -90,7 +96,9 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> {
                 // Main Content
                 Expanded(
                   child: Padding(
-                    padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.04),
+                    padding: EdgeInsets.symmetric(
+                      horizontal: screenWidth * 0.04,
+                    ),
                     child: Column(
                       children: [
                         // Image Container
@@ -99,10 +107,14 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> {
                           height: screenHeight * 0.2,
                           decoration: BoxDecoration(
                             color: const Color(0xFFE8F5F1),
-                            borderRadius: BorderRadius.circular(screenWidth * 0.04),
+                            borderRadius: BorderRadius.circular(
+                              screenWidth * 0.04,
+                            ),
                           ),
                           child: ClipRRect(
-                            borderRadius: BorderRadius.circular(screenWidth * 0.04),
+                            borderRadius: BorderRadius.circular(
+                              screenWidth * 0.04,
+                            ),
                             child: Image.file(
                               widget.imageFile,
                               fit: BoxFit.cover,
@@ -129,23 +141,32 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> {
                                 padding: EdgeInsets.all(screenWidth * 0.03),
                                 decoration: BoxDecoration(
                                   color: Colors.grey[50],
-                                  borderRadius: BorderRadius.circular(screenWidth * 0.03),
+                                  borderRadius: BorderRadius.circular(
+                                    screenWidth * 0.03,
+                                  ),
                                 ),
                                 child: Column(
                                   children: [
                                     Row(
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      children: List.generate(
-                                        5,
-                                        (index) {
-                                          final rating = int.tryParse(beeRating.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
-                                          return Icon(
-                                            index < rating ? Icons.star : Icons.star_border,
-                                            color: Colors.amber,
-                                            size: screenWidth * 0.05,
-                                          );
-                                        },
-                                      ),
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: List.generate(5, (index) {
+                                        final rating =
+                                            int.tryParse(
+                                              beeRating.replaceAll(
+                                                RegExp(r'[^0-9]'),
+                                                '',
+                                              ),
+                                            ) ??
+                                            0;
+                                        return Icon(
+                                          index < rating
+                                              ? Icons.star
+                                              : Icons.star_border,
+                                          color: Colors.amber,
+                                          size: screenWidth * 0.05,
+                                        );
+                                      }),
                                     ),
                                     SizedBox(height: 4),
                                     Text(
@@ -165,7 +186,9 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> {
                                 padding: EdgeInsets.all(screenWidth * 0.03),
                                 decoration: BoxDecoration(
                                   color: Colors.grey[50],
-                                  borderRadius: BorderRadius.circular(screenWidth * 0.03),
+                                  borderRadius: BorderRadius.circular(
+                                    screenWidth * 0.03,
+                                  ),
                                 ),
                                 child: Column(
                                   children: [
@@ -202,7 +225,9 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> {
                                 padding: EdgeInsets.all(screenWidth * 0.03),
                                 decoration: BoxDecoration(
                                   color: Colors.grey[50],
-                                  borderRadius: BorderRadius.circular(screenWidth * 0.03),
+                                  borderRadius: BorderRadius.circular(
+                                    screenWidth * 0.03,
+                                  ),
                                 ),
                                 child: Column(
                                   children: [
@@ -230,7 +255,9 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> {
                                 padding: EdgeInsets.all(screenWidth * 0.03),
                                 decoration: BoxDecoration(
                                   color: Colors.grey[50],
-                                  borderRadius: BorderRadius.circular(screenWidth * 0.03),
+                                  borderRadius: BorderRadius.circular(
+                                    screenWidth * 0.03,
+                                  ),
                                 ),
                                 child: Column(
                                   children: [
@@ -260,100 +287,139 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> {
                         // Monthly cost (sample static, can be computed later)
                         Container(
                           width: double.infinity,
-                          padding: EdgeInsets.symmetric(vertical: screenHeight * 0.012),
+                          padding: EdgeInsets.symmetric(
+                            vertical: screenHeight * 0.012,
+                          ),
                           decoration: BoxDecoration(
                             color: const Color(0xFFE8F5F1),
-                            borderRadius: BorderRadius.circular(screenWidth * 0.03),
+                            borderRadius: BorderRadius.circular(
+                              screenWidth * 0.03,
+                            ),
                           ),
                           child: Column(
                             children: [
                               Text(
-                                '₹112.50/month',
-                            style: TextStyle(fontSize: screenWidth * 0.05, fontWeight: FontWeight.bold),
-                          ),
-                          Text(
-                            'Estimated Monthly Cost (based on ₹6/unit)',
-                            style: TextStyle(fontSize: screenWidth * 0.03, color: Colors.grey[700]),
-                          ),
-                        ],
-                      ),
-                    ),
-
-                    SizedBox(height: screenHeight * 0.02),
-
-                    // Energy Consumption title
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        'Energy Consumption',
-                        style: TextStyle(fontSize: screenWidth * 0.05, fontWeight: FontWeight.bold),
+                                '₹$monthlyCost/month',
+                                style: TextStyle(
+                                  fontSize: screenWidth * 0.05,
+                                  fontWeight: FontWeight.bold,
                                 ),
                               ),
-
-                    SizedBox(height: screenHeight * 0.012),
-
-                    // Energy metrics
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Container(
-                            padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.03, vertical: screenHeight * 0.0225),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(screenWidth * 0.03),
-                              border: Border.all(color: Colors.grey[300]!),
-                            ),
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(Icons.eco_outlined, color: Colors.orange, size: screenWidth * 0.05),
-                                    SizedBox(width: 4),
                               Text(
-                                      '0.11 kg',
-                                      style: TextStyle(fontSize: screenWidth * 0.045, fontWeight: FontWeight.bold, color: Colors.orange),
-                                    ),
-                                  ],
+                                'Estimated Monthly Cost (₹$perUnitCost/unit)',
+                                style: TextStyle(
+                                  fontSize: screenWidth * 0.03,
+                                  color: Colors.grey[700],
                                 ),
-                                SizedBox(height: 4),
-                                Text(
-                                  'CO₂ emissions/ day',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(fontSize: screenWidth * 0.028, color: Colors.grey[700]),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        SizedBox(width: screenWidth * 0.03),
-                        Expanded(
-                          child: Container(
-                            padding: EdgeInsets.all(screenWidth * 0.03),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(screenWidth * 0.03),
-                              border: Border.all(color: Colors.grey[300]!),
-                            ),
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Text(
-                                  '0.14 units/day',
-                                  style: TextStyle(fontSize: screenWidth * 0.045, fontWeight: FontWeight.bold, color: const Color(0xFF2D8B6E)),
-                                ),
-                                SizedBox(height: 4),
-                                Text(
-                                  'Estimated Daily\nConsumption',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(fontSize: screenWidth * 0.028, color: Colors.grey[700]),
                               ),
                             ],
                           ),
+                        ),
+
+                        SizedBox(height: screenHeight * 0.02),
+
+                        // Energy Consumption title
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            'Energy Consumption',
+                            style: TextStyle(
+                              fontSize: screenWidth * 0.05,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
-                      ],
+
+                        SizedBox(height: screenHeight * 0.012),
+
+                        // Energy metrics
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Container(
+                                padding: EdgeInsets.symmetric(
+                                  horizontal: screenWidth * 0.03,
+                                  vertical: screenHeight * 0.0225,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(
+                                    screenWidth * 0.03,
+                                  ),
+                                  border: Border.all(color: Colors.grey[300]!),
+                                ),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        Icon(
+                                          Icons.eco_outlined,
+                                          color: Colors.orange,
+                                          size: screenWidth * 0.05,
+                                        ),
+                                        SizedBox(width: 4),
+                                        Text(
+                                          '0.11 kg',
+                                          style: TextStyle(
+                                            fontSize: screenWidth * 0.045,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.orange,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    SizedBox(height: 4),
+                                    Text(
+                                      '$co2PerDay kg',
+                                      style: TextStyle(
+                                        fontSize: screenWidth * 0.045,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.orange,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                            SizedBox(width: screenWidth * 0.03),
+                            Expanded(
+                              child: Container(
+                                padding: EdgeInsets.all(screenWidth * 0.03),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(
+                                    screenWidth * 0.03,
+                                  ),
+                                  border: Border.all(color: Colors.grey[300]!),
+                                ),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Text(
+                                      '0.14 units/day',
+                                      style: TextStyle(
+                                        fontSize: screenWidth * 0.045,
+                                        fontWeight: FontWeight.bold,
+                                        color: const Color(0xFF2D8B6E),
+                                      ),
+                                    ),
+                                    SizedBox(height: 4),
+                                    Text(
+                                      '$dailyConsumption units/day',
+                                      style: TextStyle(
+                                        fontSize: screenWidth * 0.045,
+                                        fontWeight: FontWeight.bold,
+                                        color: const Color(0xFF2D8B6E),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
 
                         const Spacer(),
@@ -367,10 +433,17 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> {
                                   Navigator.pop(context); // Go back to edit
                                 },
                                 style: OutlinedButton.styleFrom(
-                                  padding: EdgeInsets.symmetric(vertical: screenHeight * 0.018),
-                                  side: const BorderSide(color: Color(0xFF2D8B6E), width: 2),
+                                  padding: EdgeInsets.symmetric(
+                                    vertical: screenHeight * 0.018,
+                                  ),
+                                  side: const BorderSide(
+                                    color: Color(0xFF2D8B6E),
+                                    width: 2,
+                                  ),
                                   shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(screenWidth * 0.08),
+                                    borderRadius: BorderRadius.circular(
+                                      screenWidth * 0.08,
+                                    ),
                                   ),
                                 ),
                                 child: Row(
@@ -385,7 +458,11 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> {
                                       ),
                                     ),
                                     SizedBox(width: screenWidth * 0.015),
-                                    Icon(Icons.arrow_forward, color: const Color(0xFF2D8B6E), size: screenWidth * 0.045),
+                                    Icon(
+                                      Icons.arrow_forward,
+                                      color: const Color(0xFF2D8B6E),
+                                      size: screenWidth * 0.045,
+                                    ),
                                   ],
                                 ),
                               ),
@@ -396,9 +473,13 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> {
                                 onPressed: () {},
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: Colors.orange,
-                                  padding: EdgeInsets.symmetric(vertical: screenHeight * 0.018),
+                                  padding: EdgeInsets.symmetric(
+                                    vertical: screenHeight * 0.018,
+                                  ),
                                   shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(screenWidth * 0.08),
+                                    borderRadius: BorderRadius.circular(
+                                      screenWidth * 0.08,
+                                    ),
                                   ),
                                 ),
                                 child: Text(
@@ -440,7 +521,9 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> {
                 } else if (index == 2) {
                   Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (context) => const ProfileScreen()),
+                    MaterialPageRoute(
+                      builder: (context) => const ProfileScreen(),
+                    ),
                   );
                 }
               },
