@@ -65,6 +65,7 @@ class EnergyOnboardingPage extends StatelessWidget {
                         style: TextStyle(
                           fontSize: 35.83,
                           fontWeight: FontWeight.bold,
+                          fontFamily: 'WorkSansB',
                           color: Colors.black,
                           height: 1.3,
                         ),

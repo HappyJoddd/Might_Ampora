@@ -22,8 +22,8 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
   int _steps = 0;
-  int _baselineSteps = 0; // Store the step count at the start of the day
   StreamSubscription<StepCount>? _stepCountStream;
+  int _dailyStepGoal = 10000;
   DateTime _selectedDate = DateTime.now();
   DateTime _focusedDay = DateTime.now();
   int _aqiValue = 86; // Default AQI value (int for UI)
@@ -33,6 +33,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    _loadSteps();
     _initPedometer();
     _requestLocationPermissionAndFetch();
     _scheduleMidnightReset();
@@ -45,53 +46,128 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
-  Future<void> _initPedometer() async {
-    PermissionStatus permission = await Permission.activityRecognition.request();
-    if (permission.isGranted) {
-      await _loadDailySteps();
-      _stepCountStream = Pedometer.stepCountStream.listen(
-        _onStepCount,
-        onError: _onStepCountError,
-        cancelOnError: false,
-      );
-    }
-  }
-
-  Future<void> _loadDailySteps() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    String today = DateTime.now().toIso8601String().split('T')[0];
-    String? savedDate = prefs.getString('step_date');
+  /// Load saved steps from SharedPreferences
+  Future<void> _loadSteps() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedDate = prefs.getString('lastStepDate');
+    final today = DateTime.now().toIso8601String().split('T')[0];
 
     if (savedDate != today) {
-      // New day - reset steps
-      await prefs.setString('step_date', today);
-      await prefs.setInt('baseline_steps', 0);
-      _baselineSteps = 0;
-    } else {
-      // Same day - load saved baseline
-      _baselineSteps = prefs.getInt('baseline_steps') ?? 0;
-    }
-  }
-
-  void _onStepCount(StepCount event) async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-
-    if (_baselineSteps == 0 && event.steps > 0) {
-      // First time getting steps today - set baseline
-      _baselineSteps = event.steps;
-      await prefs.setInt('baseline_steps', _baselineSteps);
+      // New day, reset steps
+      await prefs.setInt('dailySteps', 0);
+      await prefs.remove('baselineSteps'); // Remove baseline for new day
+      await prefs.setString('lastStepDate', today);
     }
 
     if (!mounted) return;
     setState(() {
-      // Calculate daily steps by subtracting baseline
-      _steps = event.steps - _baselineSteps;
-      if (_steps < 0) _steps = 0; // Handle edge cases
+      _steps = prefs.getInt('dailySteps') ?? 0;
     });
   }
 
+  /// Initialize pedometer to track steps
+  /// The step counter provides total steps since last reboot (device power on)
+  Future<void> _initPedometer() async {
+    // Request activity recognition permission
+    var status = await Permission.activityRecognition.status;
+    if (!status.isGranted) {
+      status = await Permission.activityRecognition.request();
+    }
+
+    if (status.isGranted) {
+      try {
+        _stepCountStream = Pedometer.stepCountStream.listen(
+          _onStepCount,
+          onError: _onStepCountError,
+          cancelOnError: false,
+        );
+      } catch (e) {
+        debugPrint('Error initializing pedometer: $e');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error starting step counter: $e')),
+          );
+        }
+      }
+    } else {
+      debugPrint('Activity recognition permission denied');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Please grant activity recognition permission to track steps'),
+            duration: Duration(seconds: 5),
+          ),
+        );
+      }
+    }
+  }
+
+  /// Handle step count updates from the device sensor
+  /// The sensor returns total steps since last reboot (device power on)
+  /// We maintain a baseline to calculate today's steps
+  void _onStepCount(StepCount event) async {
+    final prefs = await SharedPreferences.getInstance();
+    final today = DateTime.now().toIso8601String().split('T')[0];
+    final savedDate = prefs.getString('lastStepDate');
+    
+    debugPrint('Step event received: ${event.steps} steps since reboot at ${event.timeStamp}');
+
+    // Check if it's a new day
+    if (savedDate != today) {
+      debugPrint('New day detected! Resetting daily steps.');
+      await prefs.setInt('dailySteps', 0);
+      await prefs.setString('lastStepDate', today);
+      await prefs.setInt('baselineSteps', event.steps);
+      
+      if (!mounted) return;
+      setState(() {
+        _steps = 0;
+      });
+      return;
+    }
+
+    // Get or set baseline (steps count at start of day or app launch)
+    int baseline = prefs.getInt('baselineSteps') ?? event.steps;
+    
+    // If baseline is not set yet (first run today), set it now
+    if (!prefs.containsKey('baselineSteps')) {
+      await prefs.setInt('baselineSteps', event.steps);
+      baseline = event.steps;
+      debugPrint('Baseline set to: $baseline (first run today)');
+    }
+    
+    // Calculate today's steps: current steps since reboot - baseline
+    // The sensor gives us total steps since last reboot, so we subtract the baseline
+    int dailySteps = event.steps - baseline;
+    
+    // Handle device reboot: if current steps < baseline, device was rebooted
+    // In this case, current steps ARE the new steps added after reboot
+    if (event.steps < baseline) {
+      debugPrint('Device reboot detected! Previous baseline: $baseline, Current: ${event.steps}');
+      // Add current steps to existing daily total (before reboot)
+      final previousDailySteps = prefs.getInt('dailySteps') ?? 0;
+      dailySteps = previousDailySteps + event.steps;
+      // Update baseline to 0 since device just rebooted
+      await prefs.setInt('baselineSteps', 0);
+      debugPrint('After reboot calculation: Previous daily: $previousDailySteps + New steps: ${event.steps} = Total: $dailySteps');
+    }
+
+    // Ensure steps are not negative
+    dailySteps = dailySteps >= 0 ? dailySteps : 0;
+    
+    await prefs.setInt('dailySteps', dailySteps);
+
+    if (!mounted) return;
+    setState(() {
+      _steps = dailySteps;
+    });
+    
+    debugPrint('Daily steps updated: $_steps (Sensor: ${event.steps}, Baseline: $baseline)');
+  }
+
+  /// Handle pedometer errors
   void _onStepCountError(error) {
-    print('Pedometer error: $error');
+    debugPrint('Pedometer error: $error');
   }
 
   void _scheduleMidnightReset() {
@@ -107,15 +183,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _resetDailySteps() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    String today = DateTime.now().toIso8601String().split('T')[0];
-    await prefs.setString('step_date', today);
-    await prefs.setInt('baseline_steps', 0);
-    if (!mounted) return;
-    setState(() {
-      _baselineSteps = 0;
-      _steps = 0;
-    });
+    // Reset will be handled by _onStepCount checking the date
+    await _loadSteps();
   }
 
   /// Robust location permission + fetch wrapper.
@@ -269,13 +338,13 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Map<String, dynamic> _getAQIInfo() {
-    if (_aqiValue < 50) {
+    if (_aqiValue < 100) {
       return {
         'label': 'Good',
         'color': const Color(0xFF90EE90), // Light green
         'backgroundColor': const Color(0xFFE8F5E9), // Lightest green
       };
-    } else if (_aqiValue <= 100) {
+    } else if (_aqiValue <= 200) {
       return {
         'label': 'Moderate',
         'color': const Color(0xFFFFA726), // Orange
@@ -306,7 +375,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 'Select Date',
                 style: TextStyle(
                   fontSize: 20,
-                  fontWeight: FontWeight.bold,
+                  fontFamily: 'WorkSansB',
                   color: Colors.black87,
                 ),
               ),
@@ -440,9 +509,9 @@ class _HomeScreenState extends State<HomeScreen> {
                                 Text(
                                   'Live AQI',
                                   style: TextStyle(
+                                    fontFamily: 'WorkSansM',
                                     fontSize: screenWidth * 0.035,
                                     color: Colors.black87,
-                                    fontWeight: FontWeight.w500,
                                   ),
                                 ),
                               ],
@@ -451,7 +520,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               '${_aqiValue}',
                               style: TextStyle(
                                 fontSize: screenWidth * 0.06,
-                                fontWeight: FontWeight.bold,
+                                fontFamily: 'WorkSansB',
                                 color: _getAQIInfo()['color'],
                               ),
                             ),
@@ -460,7 +529,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               style: TextStyle(
                                 fontSize: screenWidth * 0.04,
                                 color: Colors.black87,
-                                fontWeight: FontWeight.w600,
+                                fontFamily: 'WorkSansSB',
                               ),
                             ),
                           ],
@@ -476,7 +545,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           style: TextStyle(
                             color: Colors.green.shade900,
                             fontSize: 20,
-                            fontWeight: FontWeight.bold,
+                            fontFamily: 'WorkSansB',
                           ),
                         ),
                       ),
@@ -643,6 +712,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           color: Colors.white,
                           fontWeight: FontWeight.bold,
                           fontSize: 16,
+                          fontFamily: 'WorkSansB',
                         ),
                       ),
                     ),
@@ -656,7 +726,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 20.74,
-                    fontWeight: FontWeight.bold,
+                    fontFamily: 'WorkSansB',
                   ),
                 ),
                 const Text(
@@ -664,7 +734,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 14.4,
-                    fontWeight: FontWeight.w500,
+                    fontFamily: 'WorkSansM',
                   ),
                 ),
                 const Text(
@@ -672,7 +742,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   style: TextStyle(
                     color: Colors.white,
                     fontSize: 14.4,
-                    fontWeight: FontWeight.w400,
+                    fontFamily: 'WorkSansM',
                     height: 1.4,
                   ),
                 ),
@@ -692,7 +762,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     "Let's go >>",
                     style: TextStyle(
                       fontSize: 16,
-                      fontWeight: FontWeight.w600,
+                      fontFamily: 'WorkSansSB',
                     ),
                   ),
                 ),
@@ -732,7 +802,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     _formatDate(_selectedDate),
                     style: TextStyle(
                       fontSize: screenWidth * 0.04,
-                      fontWeight: FontWeight.w600,
+                      fontFamily: 'WorkSansSB',
                       color: Colors.black87,
                     ),
                   ),
@@ -782,7 +852,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 '${date.day}',
                                 style: TextStyle(
                                   fontSize: screenWidth * 0.04,
-                                  fontWeight: FontWeight.w600,
+                                  fontFamily: 'WorkSansSB',
                                   color: isSelected ? Colors.white : Colors.black54,
                                 ),
                               ),
@@ -795,7 +865,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             style: TextStyle(
                               fontSize: screenWidth * 0.028,
                               color: isSelected ? Colors.black87 : Colors.black54,
-                              fontWeight: FontWeight.w500,
+                              fontFamily: 'WorkSansM',
                             ),
                           ),
                         ],
@@ -842,6 +912,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                       style: TextStyle(
                                         fontSize: screenWidth * 0.035,
                                         color: Colors.black87,
+                                        fontFamily: 'Worksans',
                                       ),
                                     ),
                                     Text(
@@ -850,6 +921,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                         fontSize: screenWidth * 0.042,
                                         fontWeight: FontWeight.bold,
                                         color: Colors.black87,
+                                        fontFamily: 'WorkSansB',
                                       ),
                                     ),
                                   ],
@@ -886,6 +958,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                         fontSize: screenWidth * 0.035,
                                         fontWeight: FontWeight.bold,
                                         color: Colors.black87,
+                                        fontFamily: 'WorkSansB',
                                       ),
                                     ),
                                     Text(
@@ -894,6 +967,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                         fontSize: screenWidth * 0.042,
                                         fontWeight: FontWeight.bold,
                                         color: const Color(0xFFFFA726),
+                                        fontFamily: 'WorkSansB',
                                       ),
                                     ),
                                   ],
@@ -922,6 +996,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               style: TextStyle(
                                 fontSize: screenWidth * 0.035,
                                 color: Colors.black87,
+                                fontFamily: 'Worksans',
                               ),
                             ),
                             SizedBox(width: screenWidth * 0.02),
@@ -931,6 +1006,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 fontSize: screenWidth * 0.055,
                                 fontWeight: FontWeight.bold,
                                 color: const Color(0xFF4CAF50),
+                                fontFamily: 'WorkSansB',
                               ),
                             ),
                           ],
@@ -973,6 +1049,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   fontWeight: FontWeight.w600,
                   color: const Color(0xFF14532B),
                   height: 1.2,
+                  fontFamily: 'WorkSansSB',
                 ),
               ),
             ),
@@ -1056,6 +1133,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
                   height: 1.2,
+                  fontFamily: 'WorkSansB',
                 ),
               ),
 
@@ -1068,6 +1146,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   color: const Color(0xFF5A6C7D), // Medium gray-blue
                   fontSize: 13,
                   height: 1.3,
+                  fontFamily: 'Worksans',
                 ),
               ),
 
@@ -1099,6 +1178,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       color: Colors.white,
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
+                      fontFamily: 'WorkSansSB',
                     ),
                   ),
                 ),

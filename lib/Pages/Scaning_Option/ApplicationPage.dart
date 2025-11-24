@@ -268,6 +268,7 @@ class _ApplianceSelectionPageState extends State<ApplianceSelectionPage> {
                 style: TextStyle(
                   fontSize: screenWidth * 0.032,
                   fontWeight: FontWeight.w500,
+                  fontFamily: 'WorkSansM',
                   color: textColor,
                   height: 1.1,
                 ),

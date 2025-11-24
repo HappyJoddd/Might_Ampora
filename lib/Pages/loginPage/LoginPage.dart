@@ -153,6 +153,7 @@ Future<void> _handleSendOtp() async {
                                     : screenWidth * 0.07,
                                 fontWeight: FontWeight.bold,
                                 color: const Color(0xFFEF5F00),
+                                fontFamily: 'WorkSansB',
                               ),
                             ),
                             TextSpan(
@@ -163,6 +164,7 @@ Future<void> _handleSendOtp() async {
                                     : screenWidth * 0.07,
                                 fontWeight: FontWeight.bold,
                                 color: const Color(0xFF2B9A66),
+                                fontFamily: 'WorkSansB',
                               ),
                             ),
                           ],
@@ -287,6 +289,7 @@ Future<void> _handleSendOtp() async {
                         style: TextStyle(
                           fontSize: screenWidth * 0.045,
                           fontWeight: FontWeight.w600,
+                          fontFamily: 'WorkSansSB',
                         ),
                       ),
                     ),
@@ -342,6 +345,7 @@ Future<void> _handleSendOtp() async {
               style: TextStyle(
                 fontSize: screenWidth * 0.04,
                 fontWeight: FontWeight.w500,
+                fontFamily: 'WorkSansM',
               ),
             ),
           ],

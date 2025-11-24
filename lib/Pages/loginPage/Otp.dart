@@ -6,7 +6,6 @@ import 'package:might_ampora/services/api_service.dart';
 import 'package:might_ampora/services/auth_storage.dart';
 import 'package:might_ampora/Routes/routes_name.dart';
 import 'registarPage.dart';
-import '../Home/HomeScreen.dart';
 
 class OTPpage extends StatefulWidget {
   const OTPpage({super.key});
@@ -244,6 +243,7 @@ Future<void> _onContinue() async {
                         fontSize: screenWidth * 0.05,
                         color: Colors.black87,
                         fontWeight: FontWeight.w500,
+                        fontFamily: 'WorkSansM',
                       ),
                     ),
                     SizedBox(height: screenHeight * 0.03),
@@ -262,6 +262,7 @@ Future<void> _onContinue() async {
                             fontSize: screenWidth * 0.06,
                             color: Colors.black,
                             fontWeight: FontWeight.w500,
+                            fontFamily: 'WorkSansM',
                           ),
                           decoration: BoxDecoration(
                             color: Colors.white,
@@ -279,6 +280,7 @@ Future<void> _onContinue() async {
                             fontSize: screenWidth * 0.06,
                             color: Colors.black,
                             fontWeight: FontWeight.w500,
+                            fontFamily: 'WorkSansM',
                           ),
                           decoration: BoxDecoration(
                             color: Colors.white,
@@ -296,6 +298,7 @@ Future<void> _onContinue() async {
                             fontSize: screenWidth * 0.06,
                             color: Colors.black,
                             fontWeight: FontWeight.w500,
+                            fontFamily: 'WorkSansM',
                           ),
                           decoration: BoxDecoration(
                             color: const Color(0xFF4CAF50).withOpacity(0.1),
@@ -329,6 +332,7 @@ Future<void> _onContinue() async {
                                 : Colors.grey.shade600,
                             fontWeight: FontWeight.w500,
                             decoration: TextDecoration.underline,
+                            fontFamily: 'WorkSansM',
                           ),
                         ),
                       ),
@@ -354,6 +358,7 @@ Future<void> _onContinue() async {
                           style: TextStyle(
                             fontSize: screenWidth * 0.04,
                             fontWeight: FontWeight.w600,
+                            fontFamily: 'WorkSansSB',
                           ),
                         ),
                       ),

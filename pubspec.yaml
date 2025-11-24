@@ -95,8 +95,28 @@ flutter:
   # "family" key with the font family name, and a "fonts" key with a
   # list giving the asset and other descriptors for the font. For
   # example:
-  # fonts:
-  #   - family: Schyler
+  fonts:
+      - family: Worksans
+        fonts:
+          - asset: fonts/WorkSans-Regular.ttf
+          - asset: fonts/WorkSans-Italic.ttf
+            style: italic
+      - family: WorkSansM
+        fonts:
+          - asset: fonts/WorkSans-Medium.ttf
+          - asset: fonts/WorkSans-MediumItalic.ttf
+            style: italic
+      - family: WorkSansSB
+        fonts:
+          - asset: fonts/WorkSans-SemiBold.ttf
+          - asset: fonts/WorkSans-SemiBoldItalic.ttf
+            style: italic
+      - family: WorkSansB
+        fonts:
+          - asset: fonts/WorkSans-Bold.ttf
+          - asset: fonts/WorkSans-BoldItalic.ttf
+            style: italic
+  # family: Schyler
   #     fonts:
   #       - asset: fonts/Schyler-Regular.ttf
   #       - asset: fonts/Schyler-Italic.ttf

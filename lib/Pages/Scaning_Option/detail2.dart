@@ -1,24 +1,24 @@
 import 'package:flutter/material.dart';
-import 'dart:io';
 import '../Components/LiquidNavbar.dart';
 import '../Home/HomeScreen.dart';
 import '../Home/Profilepage.dart';
+import 'ManualDetail.dart';
 
-class DeviceDetailsPage extends StatefulWidget {
-  final File imageFile;
+// ProfileScreen is in Profilepage.dart
+
+class DeviceDetails2Page extends StatefulWidget {
   final Map<String, dynamic> data;
 
-  const DeviceDetailsPage({
+  const DeviceDetails2Page({
     Key? key,
-    required this.imageFile,
     required this.data,
   }) : super(key: key);
 
   @override
-  State<DeviceDetailsPage> createState() => _DeviceDetailsPageState();
+  State<DeviceDetails2Page> createState() => _DeviceDetails2PageState();
 }
 
-class _DeviceDetailsPageState extends State<DeviceDetailsPage> {
+class _DeviceDetails2PageState extends State<DeviceDetails2Page> {
   @override
   Widget build(BuildContext context) {
     final screenHeight = MediaQuery.of(context).size.height;
@@ -35,7 +35,6 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> {
     final dailyConsumption = widget.data["dailyConsumption"]?.toString() ?? "0";
     final monthlyCost = widget.data["monthlyCost"]?.toString() ?? "0";
     final co2PerDay = widget.data["co2PerDay"]?.toString() ?? "0";
-    final perUnitCost = widget.data["perUnitCost"]?.toString() ?? "6";
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -103,39 +102,7 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> {
                     ),
                     child: Column(
                       children: [
-                        // Image Container
-                        Container(
-                          width: double.infinity,
-                          height: screenHeight * 0.2,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFE8F5F1),
-                            borderRadius: BorderRadius.circular(
-                              screenWidth * 0.04,
-                            ),
-                          ),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(
-                              screenWidth * 0.04,
-                            ),
-                            child: Image.file(
-                              widget.imageFile,
-                              fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) {
-                                return Center(
-                                  child: Icon(
-                                    Icons.image,
-                                    size: screenWidth * 0.15,
-                                    color: Colors.grey,
-                                  ),
-                                );
-                              },
-                            ),
-                          ),
-                        ),
-
-                        SizedBox(height: screenHeight * 0.015),
-
-                        // Rating and Device Health
+                        // Rating and Monthly Cost (swapped positions)
                         Row(
                           children: [
                             Expanded(
@@ -487,7 +454,18 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> {
                             SizedBox(width: screenWidth * 0.03),
                             Expanded(
                               child: ElevatedButton(
-                                onPressed: () {},
+                                onPressed: () {
+                                  // Navigate to ManualDetail page
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) =>
+                                          ManualDetailPage(
+                                            applianceName: deviceName,
+                                          ),
+                                    ),
+                                  );
+                                },
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: Colors.orange,
                                   padding: EdgeInsets.symmetric(

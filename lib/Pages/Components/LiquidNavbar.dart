@@ -400,8 +400,8 @@ class _OverlayItem extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   color: Colors.white,
+                  fontFamily: 'WorkSansSB',
                   fontSize: screenWidth * 0.028,
-                  fontWeight: FontWeight.w600,
                   height: 1.2,
                 ),
               ),

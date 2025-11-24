@@ -135,6 +135,7 @@ class _ExtraDetailPageState extends State<ExtraDetailPage> {
                           style: TextStyle(
                             fontSize: screenWidth * 0.055,
                             fontWeight: FontWeight.bold,
+                            fontFamily: 'WorkSansB',
                           ),
                         ),
                         if (brand.isNotEmpty)
@@ -194,37 +195,15 @@ class _ExtraDetailPageState extends State<ExtraDetailPage> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                _buildLabel('Estimated Monthly Cost'),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                    vertical: 16,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Colors.grey.shade50,
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(
-                                      color: Colors.grey.shade200,
-                                    ),
-                                  ),
-                                  child: Text(
-                                    '₹112.50/month',
-                                    style: TextStyle(
-                                      fontSize: screenWidth * 0.035,
-                                      color: Colors.grey.shade600,
-                                    ),
-                                  ),
+                                _buildLabel('How old is your device'),
+                                _buildInputField(
+                                  controller: _deviceAgeController,
+                                  hintText: '1 year',
                                 ),
                               ],
                             ),
                           ),
                         ],
-                      ),
-                      SizedBox(height: screenHeight * 0.02),
-                      _buildLabel('How old is your device'),
-                      _buildInputField(
-                        controller: _deviceAgeController,
-                        hintText: '1 year',
                       ),
                       SizedBox(height: screenHeight * 0.04),
                     ],
@@ -359,6 +338,7 @@ class _ExtraDetailPageState extends State<ExtraDetailPage> {
       style: const TextStyle(
         fontSize: 14,
         fontWeight: FontWeight.w500,
+        fontFamily: 'WorkSansM',
         color: Colors.black,
       ),
     ),

@@ -462,6 +462,7 @@ class _RenewableEnergyEstimationState extends State<RenewableEnergyEstimation> {
                       style: TextStyle(
                         fontSize: screenWidth * 0.055,
                         fontWeight: FontWeight.bold,
+                        fontFamily: 'WorkSansB',
                         color: valueColor,
                       ),
                     ),

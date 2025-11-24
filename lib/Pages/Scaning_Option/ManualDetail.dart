@@ -20,8 +20,6 @@ class _ManualDetailPageState extends State<ManualDetailPage> {
   final TextEditingController _perUnitCostController = TextEditingController();
   final TextEditingController _deviceAgeController = TextEditingController();
 
-  double _estimatedMonthlyCost = 0.0;
-
   @override
   void dispose() {
     _brandController.dispose();
@@ -36,15 +34,13 @@ class _ManualDetailPageState extends State<ManualDetailPage> {
       final usage = double.tryParse(_usageController.text) ?? 0;
       final perUnitCost = double.tryParse(_perUnitCostController.text) ?? 0;
       
-      // Assuming 30 days in a month
-      setState(() {
-        _estimatedMonthlyCost = usage * perUnitCost * 30;
-      });
+      // Calculate monthly cost
+      final estimatedMonthlyCost = usage * perUnitCost * 30;
 
       // Show success message or navigate to results
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Estimated Monthly Cost: ₹${_estimatedMonthlyCost.toStringAsFixed(2)}/month'),
+          content: Text('Estimated Monthly Cost: ₹${estimatedMonthlyCost.toStringAsFixed(2)}/month'),
           backgroundColor: const Color(0xFF4CAF50),
         ),
       );
@@ -104,6 +100,7 @@ class _ManualDetailPageState extends State<ManualDetailPage> {
                       style: TextStyle(
                         fontSize: screenWidth * 0.055,
                         fontWeight: FontWeight.bold,
+                        fontFamily: 'WorkSansB',
                         color: Colors.black,
                         height: 1.2,
                       ),
@@ -153,7 +150,7 @@ class _ManualDetailPageState extends State<ManualDetailPage> {
 
                       SizedBox(height: screenHeight * 0.02),
 
-                      // Per unit cost and Estimated Monthly Cost (side by side)
+                      // Per unit cost and How old is your device (side by side)
                       Row(
                         children: [
                           Expanded(
@@ -174,43 +171,15 @@ class _ManualDetailPageState extends State<ManualDetailPage> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                _buildLabel('Estimated Monthly Cost'),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                    vertical: 16,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Colors.grey.shade50,
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(
-                                      color: Colors.grey.shade200,
-                                      width: 1,
-                                    ),
-                                  ),
-                                  child: Text(
-                                    _estimatedMonthlyCost > 0
-                                        ? '₹${_estimatedMonthlyCost.toStringAsFixed(2)}/month'
-                                        : '₹112.50/month',
-                                    style: TextStyle(
-                                      fontSize: screenWidth * 0.04,
-                                      color: Colors.grey.shade600,
-                                    ),
-                                  ),
+                                _buildLabel('How old is your device'),
+                                _buildInputField(
+                                  controller: _deviceAgeController,
+                                  hintText: '1 year',
                                 ),
                               ],
                             ),
                           ),
                         ],
-                      ),
-
-                      SizedBox(height: screenHeight * 0.02),
-
-                      // How old is your device field
-                      _buildLabel('How old is your device'),
-                      _buildInputField(
-                        controller: _deviceAgeController,
-                        hintText: '1 year',
                       ),
 
                       SizedBox(height: screenHeight * 0.04),
@@ -263,6 +232,7 @@ class _ManualDetailPageState extends State<ManualDetailPage> {
         style: const TextStyle(
           fontSize: 14,
           fontWeight: FontWeight.w500,
+          fontFamily: 'WorkSansM',
           color: Colors.black,
         ),
       ),
