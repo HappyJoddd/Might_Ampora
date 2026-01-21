@@ -131,13 +131,11 @@ static Future<void> saveUserDetails({
     await _storage.deleteAll();
   }
 
-  /// Logs user out safely but keeps `hasRegistered` so OTP flow works
+  /// Logs user out and clears tokens, but keeps user info for faster re-login
   static Future<void> logout() async {
     await _storage.delete(key: _keyAccessToken);
     await _storage.delete(key: _keyRefreshToken);
     await _storage.write(key: _keyIsLoggedIn, value: 'false');
-
-    // Keep registration info so user goes to OTP next time
-    await _storage.write(key: _keyHasRegistered, value: 'true');
+    await _storage.write(key: _keyHasRegistered, value: 'false');
   }
 }

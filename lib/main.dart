@@ -2,8 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:might_ampora/Routes/routes.dart';
 import 'package:might_ampora/Routes/routes_name.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // 🔹 Load environment variables
+  await dotenv.load(fileName: ".env");
+
   runApp(const MyApp());
 }
 
@@ -16,7 +22,7 @@ class MyApp extends StatelessWidget {
     return GetMaterialApp(
       debugShowCheckedModeBanner: false,
       getPages: AppRoutes.getRoutes(),
-      initialRoute: RouteName.home,
+      initialRoute: RouteName.splash,
       theme: ThemeData(
         fontFamily: 'Worksans',
       ),

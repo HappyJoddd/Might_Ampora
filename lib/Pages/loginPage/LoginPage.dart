@@ -4,6 +4,7 @@ import 'package:might_ampora/Pages/loginPage/registarPage.dart';
 import 'package:might_ampora/Routes/routes_name.dart';
 import 'package:might_ampora/services/api_service.dart';
 import 'package:might_ampora/services/auth_storage.dart';
+import 'package:might_ampora/services/google_auth_service.dart';
 import 'Otp.dart';
 
 class LoginPage extends StatefulWidget {
@@ -34,7 +35,7 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
-  /// ✅ Handles OTP / Registration routing based on backend response
+
 Future<void> _handleSendOtp() async {
   final phoneNumber = _phoneController.text.trim();
 
@@ -163,7 +164,7 @@ Future<void> _handleSendOtp() async {
                                     ? screenWidth * 0.05
                                     : screenWidth * 0.07,
                                 fontWeight: FontWeight.bold,
-                                color: const Color(0xFF2B9A66),
+                                color:  Color(0xFF2B9A66),
                                 fontFamily: 'WorkSansB',
                               ),
                             ),
@@ -180,7 +181,26 @@ Future<void> _handleSendOtp() async {
                     label: "Continue with Google",
                     asset: "images/Google.png",
                     color: Colors.white,
-                    onTap: () => print("Google login pressed"),
+                    onTap: () async {
+                        setState(() => _isLoading = true);
+
+                        final success = await GoogleAuthService.signIn();
+
+                        setState(() => _isLoading = false);
+
+                        if (!mounted) return;
+
+                        if (success) {
+                          Navigator.pushReplacementNamed(context, RouteName.home);
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text("❌ Google Sign-In failed. Please contact support or try phone login."),
+                              duration: Duration(seconds: 4),
+                            ),
+                          );
+                        }
+                      },
                     screenWidth: screenWidth,
                     screenHeight: screenHeight,
                   ),

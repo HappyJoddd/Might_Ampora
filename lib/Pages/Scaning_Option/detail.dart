@@ -374,11 +374,11 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> {
                                         ),
                                         SizedBox(width: 4),
                                         Text(
-                                          '0.11 kg',
+                                          '$co2PerDay kg',  
                                           style: TextStyle(
                                             fontSize: screenWidth * 0.045,
                                             fontWeight: FontWeight.bold,
-                                            color: Colors.orange,
+                                            color: Colors.black,
                                             fontFamily: 'WorkSansB',
                                           ),
                                         ),
@@ -386,11 +386,11 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> {
                                     ),
                                     SizedBox(height: 4),
                                     Text(
-                                      '$co2PerDay kg',
+                                      'CO₂ emissions/ day',
                                       style: TextStyle(
-                                        fontSize: screenWidth * 0.045,
+                                        fontSize: screenWidth * 0.03,
                                         fontWeight: FontWeight.bold,
-                                        color: Colors.orange,
+                                        color: Colors.black,
                                         fontFamily: 'WorkSansB',
                                       ),
                                     ),
@@ -413,21 +413,21 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> {
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
                                     Text(
-                                      '0.14 units/day',
+                                      '$dailyConsumption units/day',
                                       style: TextStyle(
                                         fontSize: screenWidth * 0.045,
                                         fontWeight: FontWeight.bold,
-                                        color: const Color(0xFF2D8B6E),
+                                        color: const Color(0xFF218358),
                                         fontFamily: 'WorkSansB',
                                       ),
                                     ),
                                     SizedBox(height: 4),
                                     Text(
-                                      '$dailyConsumption units/day',
+                                      'Estimated Daily Consumption',
                                       style: TextStyle(
-                                        fontSize: screenWidth * 0.045,
+                                        fontSize: screenWidth * 0.03,
                                         fontWeight: FontWeight.bold,
-                                        color: const Color(0xFF2D8B6E),
+                                        color: Colors.black,
                                         fontFamily: 'WorkSansB',
                                       ),
                                     ),

@@ -11,6 +11,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../Components/LiquidNavbar.dart';
 import '../Scaning_Option/EnergyPage.dart';
+import 'package:might_ampora/services/auth_storage.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
@@ -28,6 +29,9 @@ class _HomeScreenState extends State<HomeScreen> {
   DateTime _focusedDay = DateTime.now();
   int _aqiValue = 86; // Default AQI value (int for UI)
   String? _location;
+  String _userName = 'User'; // User's first name
+  String _cityName = 'Your City'; // User's current city
+  String _userInitials = 'U'; // User's initials (first + last)
   Timer? _midnightTimer;
 
   @override
@@ -35,6 +39,7 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _loadSteps();
     _initPedometer();
+    _loadUserData();
     _requestLocationPermissionAndFetch();
     _scheduleMidnightReset();
   }
@@ -46,6 +51,35 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
+  /// Load user's name from storage
+  Future<void> _loadUserData() async {
+    try {
+      final userDetails = await AuthStorage.getUserDetails();
+      final fullName = userDetails['name'] ?? 'User';
+      // Extract first name
+      final firstName = fullName.split(' ').first;
+      
+      // Extract initials (first name initial + last name initial)
+      final nameParts = fullName.trim().split(' ');
+      String initials = '';
+      if (nameParts.isNotEmpty) {
+        initials = nameParts[0][0].toUpperCase(); // First name initial
+        if (nameParts.length > 1) {
+          initials += nameParts[nameParts.length - 1][0].toUpperCase(); // Last name initial
+        }
+      }
+      
+      if (mounted) {
+        setState(() {
+          _userName = firstName;
+          _userInitials = initials.isNotEmpty ? initials : 'U';
+        });
+      }
+    } catch (e) {
+      print('Error loading user data: $e');
+    }
+  }
+
   /// Load saved steps from SharedPreferences
   Future<void> _loadSteps() async {
     final prefs = await SharedPreferences.getInstance();
@@ -55,7 +89,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (savedDate != today) {
       // New day, reset steps
       await prefs.setInt('dailySteps', 0);
-      await prefs.remove('baselineSteps'); // Remove baseline for new day
+      await prefs.remove('baselineSteps'); 
       await prefs.setString('lastStepDate', today);
     }
 
@@ -192,12 +226,16 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _requestLocationPermissionAndFetch() async {
     try {
       LocationPermission permission = await Geolocator.checkPermission();
+      print('📍 Initial location permission status: $permission');
 
       if (permission == LocationPermission.denied) {
+        print('📍 Requesting location permission...');
         permission = await Geolocator.requestPermission();
+        print('📍 Permission after request: $permission');
       }
 
       if (permission == LocationPermission.deniedForever) {
+        print('📍 Location permission denied forever');
         // Show a small dialog asking user to open settings
         if (!mounted) return;
         showDialog(
@@ -216,7 +254,7 @@ class _HomeScreenState extends State<HomeScreen> {
               TextButton(
                 onPressed: () async {
                   Navigator.of(ctx).pop();
-                  await openAppSettings();
+                  await Geolocator.openAppSettings();
                 },
                 child: const Text("Open Settings"),
               ),
@@ -230,9 +268,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
       if (permission == LocationPermission.whileInUse ||
           permission == LocationPermission.always) {
+        print('📍 Permission granted! Getting location...');
         await _getCurrentLocation();
       } else {
         // permission denied - try fetching with default location (Delhi)
+        print('📍 Permission denied. Using default location.');
         await _simulateAQI();
       }
     } catch (e) {
@@ -250,11 +290,58 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() {
         _location = '${position.latitude}, ${position.longitude}';
       });
+      
+      // Get city name from coordinates
+      await _getCityFromCoordinates(position.latitude, position.longitude);
+      
       await _simulateAQI(latitude: position.latitude, longitude: position.longitude);
     } catch (e) {
       print('Error getting location: $e');
       // fallback to default fetch
       await _simulateAQI();
+    }
+  }
+
+  /// Get city name from coordinates using reverse geocoding
+  Future<void> _getCityFromCoordinates(double lat, double lon) async {
+    try {
+      // Use Nominatim OpenStreetMap reverse geocoding API
+      final uri = Uri.https(
+        'nominatim.openstreetmap.org',
+        '/reverse',
+        {
+          'lat': lat.toString(),
+          'lon': lon.toString(),
+          'format': 'json',
+        },
+      );
+
+      final response = await http.get(
+        uri,
+        headers: {'User-Agent': 'MightAmpora/1.0'},
+      ).timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final address = data['address'];
+        
+        // Try to get city from various possible fields
+        String? city = address['city'] ?? 
+                      address['town'] ?? 
+                      address['village'] ?? 
+                      address['municipality'] ??
+                      address['state_district'];
+        
+        if (city != null && mounted) {
+          setState(() {
+            _cityName = city;
+          });
+          print('📍 City found: $city');
+        }
+      }
+    } catch (e) {
+      print('Error getting city name: $e');
+      // Keep default city name
     }
   }
 
@@ -443,17 +530,14 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _onNavItemSelected(int index) {
+    // LiquidNavbar handles navigation internally, just update the index
     setState(() {
       _selectedIndex = index;
     });
-    if (index == 0) {
-      // Home
-    } else if (index == 1) {
+    if (index == 1) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Add Button Pressed!')),
       );
-    } else if (index == 2) {
-      Navigator.pushNamed(context, '/profile');
     }
   }
 
@@ -706,9 +790,9 @@ class _HomeScreenState extends State<HomeScreen> {
                     CircleAvatar(
                       radius: 25,
                       backgroundColor: const Color(0xFF1B5E20),
-                      child: const Text(
-                        "HB",
-                        style: TextStyle(
+                      child: Text(
+                        _userInitials,
+                        style: const TextStyle(
                           color: Colors.white,
                           fontWeight: FontWeight.bold,
                           fontSize: 16,
@@ -721,17 +805,17 @@ class _HomeScreenState extends State<HomeScreen> {
                 // Push welcome text and button to bottom
 
                 // Welcome text
-                const Text(
-                  "Hey! Harshil",
-                  style: TextStyle(
+                Text(
+                  "Hey! $_userName",
+                  style: const TextStyle(
                     color: Colors.white,
                     fontSize: 20.74,
                     fontFamily: 'WorkSansB',
                   ),
                 ),
-                const Text(
-                  "DAU, Gandhinagar",
-                  style: TextStyle(
+                Text(
+                  _cityName,
+                  style: const TextStyle(
                     color: Colors.white,
                     fontSize: 14.4,
                     fontFamily: 'WorkSansM',

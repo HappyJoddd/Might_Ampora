@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:get/get.dart';
 import 'package:might_ampora/Pages/Components/LiquidNavbar.dart';
 import 'package:might_ampora/Pages/Home/HomeScreen.dart';
 import 'package:might_ampora/services/api_service.dart';
@@ -15,6 +16,45 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   int _currentIndex = 2; // Profile is at index 2
+  String _userName = 'User';
+  String _userEmail = '';
+  String _userInitials = 'U';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserData();
+  }
+
+  /// Load user's data from storage
+  Future<void> _loadUserData() async {
+    try {
+      final userDetails = await AuthStorage.getUserDetails();
+      final fullName = userDetails['name'] ?? 'User';
+      final email = userDetails['email'] ?? '';
+      
+      // Extract initials (first name initial + last name initial)
+      final nameParts = fullName.trim().split(' ');
+      String initials = '';
+      if (nameParts.isNotEmpty) {
+        initials = nameParts[0][0].toUpperCase(); // First name initial
+        if (nameParts.length > 1) {
+          initials += nameParts[nameParts.length - 1][0].toUpperCase(); // Last name initial
+        }
+      }
+      
+      if (mounted) {
+        setState(() {
+          _userName = fullName;
+          _userEmail = email;
+          _userInitials = initials.isNotEmpty ? initials : 'U';
+        });
+      }
+    } catch (e) {
+      print('Error loading user data: $e');
+    }
+  }
+
 Future<void> _handleLogout() async {
   try {
     // Retrieve refresh token before clearing
@@ -31,12 +71,8 @@ Future<void> _handleLogout() async {
       const SnackBar(content: Text("👋 Logged out successfully.")),
     );
 
-    // 🔁 Navigate to login & clear navigation stack
-    Navigator.pushNamedAndRemoveUntil(
-      context,
-      RouteName.login,
-      (route) => false,
-    );
+    // 🔁 Navigate to login & clear navigation stack using GetX
+    Get.offAllNamed(RouteName.login);
   } catch (e) {
     ScaffoldMessenger.of(
       context,
@@ -112,7 +148,7 @@ Future<void> _handleLogout() async {
                                     ),
                                     child: Center(
                                       child: Text(
-                                        'HB',
+                                        _userInitials,
                                         style: TextStyle(
                                           color: Colors.white,
                                           fontSize: screenWidth * 0.06,
@@ -130,7 +166,7 @@ Future<void> _handleLogout() async {
                                           CrossAxisAlignment.start,
                                       children: [
                                         Text(
-                                          'Harshit Bhandari',
+                                          _userName,
                                           style: TextStyle(
                                             fontSize: screenWidth * 0.05,
                                             fontWeight: FontWeight.bold,
@@ -139,14 +175,15 @@ Future<void> _handleLogout() async {
                                           ),
                                         ),
                                         SizedBox(height: screenHeight * 0.005),
-                                        Text(
-                                          'Student',
-                                          style: TextStyle(
-                                            fontSize: screenWidth * 0.035,
-                                            color: Colors.grey[600],
-                                            fontFamily: 'Worksans',
+                                        if (_userEmail.isNotEmpty)
+                                          Text(
+                                            _userEmail,
+                                            style: TextStyle(
+                                              fontSize: screenWidth * 0.035,
+                                              color: Colors.grey[600],
+                                              fontFamily: 'Worksans',
+                                            ),
                                           ),
-                                        ),
                                         SizedBox(height: screenHeight * 0.01),
                                         Text(
                                           'Green Beginner',
@@ -311,15 +348,8 @@ Future<void> _handleLogout() async {
               child: LiquidNavbar(
                 currentIndex: _currentIndex,
                 onItemSelected: (index) {
+                  // LiquidNavbar handles navigation internally, just update the index
                   setState(() => _currentIndex = index);
-                  if (index == 0) {
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => const HomeScreen(),
-                      ),
-                    );
-                  }
                 },
               ),
             ),

@@ -1,11 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 import 'auth_storage.dart';
 
 class ApiService {
-  static const String baseUrl =
-      "https://might-ampora-backend-447t.onrender.com/api/v1";
+  static final String? baseUrl =
+    dotenv.env['BACKEND_URL'] ?? "https://might-ampora-backend-p4tz.onrender.com/api/v1"; // Replace with your backend URL or use dotenv
 
   // ============================================================
   // 🔹 TOKEN & AUTH HELPERS
@@ -35,6 +36,20 @@ class ApiService {
       return false;
     }
   }
+  static Future<Map<String, dynamic>> signInWithGoogle(String idToken) async {
+  try {
+    final response = await http.post(
+      Uri.parse("$baseUrl/users/google"),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'idToken': idToken}),
+    );
+
+    return _parseResponse(response);
+  } catch (e) {
+    return {'success': false, 'error': e.toString()};
+  }
+}
+
 
   static Future<Map<String, dynamic>> signInWithOTP({
   required String phone,
