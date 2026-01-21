@@ -17,6 +17,10 @@ migrate_working_dir/
 .env.*
 !.env.example
 
+# Firebase config files
+**/google-services.json
+**/GoogleService-Info.plist
+
 # IntelliJ related
 *.iml
 *.ipr
