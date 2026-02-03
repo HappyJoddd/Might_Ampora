@@ -21,6 +21,118 @@ class DeviceDetailsPage2 extends StatefulWidget {
 }
 
 class _DeviceDetailsPage2State extends State<DeviceDetailsPage2> {
+  /// Calculate device health status based on age, BEE rating, power rating, and usage
+  /// Returns: 'good', 'average', or 'bad'
+  String _getDeviceHealthStatus(
+    String powerRatingStr,
+    String usageHoursStr,
+    String dailyConsumptionStr,
+    String deviceAgeStr,
+    String beeRatingStr,
+  ) {
+    final powerRating =
+        double.tryParse(powerRatingStr.replaceAll(RegExp(r'[^0-9.]'), '')) ??
+            0;
+    final usageHours =
+        double.tryParse(usageHoursStr.replaceAll(RegExp(r'[^0-9.]'), '')) ?? 0;
+    final dailyConsumption = double.tryParse(dailyConsumptionStr) ?? 0;
+    final deviceAge =
+        double.tryParse(deviceAgeStr.replaceAll(RegExp(r'[^0-9.]'), '')) ?? 0;
+    final beeRating =
+        int.tryParse(beeRatingStr.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+
+    // Scoring system (starts at 2, range -2 to 5)
+    int healthScore = 2;
+
+    // 1. AGE-BASED SCORING
+    if (deviceAge <= 2) {
+      healthScore += 2;
+    } else if (deviceAge <= 5) {
+      healthScore += 1;
+    } else if (deviceAge <= 8) {
+      healthScore += 0;
+    } else if (deviceAge <= 12) {
+      healthScore -= 1;
+    } else {
+      healthScore -= 2;
+    }
+
+    // 2. BEE STAR RATING
+    if (beeRating >= 5) {
+      healthScore += 1;
+    } else if (beeRating >= 3) {
+      healthScore += 0;
+    } else if (beeRating > 0) {
+      healthScore -= 1;
+    }
+
+    // 3. POWER RATING BENCHMARK
+    if (powerRating > 2000 && deviceAge > 5) {
+      healthScore -= 1;
+    } else if (powerRating > 3000) {
+      healthScore -= 1;
+    }
+
+    // 4. USAGE PATTERN ANALYSIS
+    if (usageHours > 16) {
+      healthScore -= 1;
+    }
+
+    // 5. COMBINED AGE + CONSUMPTION CHECK
+    if (deviceAge > 8 && dailyConsumption > 5) {
+      healthScore -= 1;
+    }
+
+    if (healthScore >= 3) {
+      return 'good';
+    } else if (healthScore >= 0) {
+      return 'average';
+    }
+    return 'bad';
+  }
+
+  /// Get device health message based on status
+  String _getDeviceHealthMessage(String status) {
+    switch (status) {
+      case 'good':
+        return 'Device Health is Good';
+      case 'average':
+        return 'Device Health is Average';
+      case 'bad':
+        return 'Device Health is Bad';
+      default:
+        return 'Device Health is Good';
+    }
+  }
+
+  /// Get device health subtitle based on status
+  String _getDeviceHealthSubtitle(String status) {
+    switch (status) {
+      case 'good':
+        return 'Can use it for more years';
+      case 'average':
+        return 'Need to replace it soon';
+      case 'bad':
+        return 'Immediate replacement needed';
+      default:
+        return 'Can use it for more years';
+    }
+  }
+
+  /// Get device health color based on status
+  Color _getDeviceHealthColor(String status) {
+    switch (status) {
+      case 'good':
+        return const Color(0xFF218358); // Green
+      case 'average':
+        return const Color(0xFFF59E0B); // Orange
+      case 'bad':
+        return const Color(0xFFDC2626); // Red
+      default:
+        return const Color(0xFF218358);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final screenHeight = MediaQuery.of(context).size.height;
@@ -36,6 +148,16 @@ class _DeviceDetailsPage2State extends State<DeviceDetailsPage2> {
     final dailyConsumption = widget.data["dailyConsumption"]?.toString() ?? "0";
     final monthlyCost = widget.data["monthlyCost"]?.toString() ?? "0";
     final co2PerDay = widget.data["co2PerDay"]?.toString() ?? "0";
+    final deviceAge = widget.data["deviceAge"]?.toString() ?? "0";
+
+    // Calculate device health status using age, BEE rating, power rating, and usage
+    final healthStatus = _getDeviceHealthStatus(
+      powerRating,
+      usageHours,
+      dailyConsumption,
+      deviceAge,
+      beeRating,
+    );
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -229,16 +351,16 @@ class _DeviceDetailsPage2State extends State<DeviceDetailsPage2> {
                                 child: Column(
                                   children: [
                                     Text(
-                                      'Device Health is Good',
+                                      _getDeviceHealthMessage(healthStatus),
                                       style: TextStyle(
                                         fontSize: screenWidth * 0.045,
                                         fontWeight: FontWeight.bold,
-                                        color: const Color(0xFF2D8B6E),
+                                        color: _getDeviceHealthColor(healthStatus),
                                         fontFamily: 'WorkSansB',
                                       ),
                                     ),
                                     Text(
-                                      'Can use it for more years',
+                                      _getDeviceHealthSubtitle(healthStatus),
                                       style: TextStyle(
                                         fontSize: screenWidth * 0.03,
                                         color: Colors.black87,

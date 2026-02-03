@@ -19,6 +19,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   int _currentIndex = 2; // Profile is at index 2
   String _userName = 'User';
   String _userEmail = '';
+  String _userPhone = '';
   String _userInitials = 'U';
   
   // Monthly summary data
@@ -40,6 +41,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       final userDetails = await AuthStorage.getUserDetails();
       final fullName = userDetails['name'] ?? 'User';
       final email = userDetails['email'] ?? '';
+      final phone = userDetails['phone'] ?? '';
       
       // Extract initials (first name initial + last name initial)
       final nameParts = fullName.trim().split(' ');
@@ -55,6 +57,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         setState(() {
           _userName = fullName;
           _userEmail = email;
+          _userPhone = phone;
           _userInitials = initials.isNotEmpty ? initials : 'U';
         });
       }
@@ -312,6 +315,15 @@ Future<void> _handleLogout() async {
                                         if (_userEmail.isNotEmpty)
                                           Text(
                                             _userEmail,
+                                            style: TextStyle(
+                                              fontSize: screenWidth * 0.035,
+                                              color: Colors.grey[600],
+                                              fontFamily: 'Worksans',
+                                            ),
+                                          ),
+                                        if (_userPhone.isNotEmpty)
+                                          Text(
+                                            _userPhone,
                                             style: TextStyle(
                                               fontSize: screenWidth * 0.035,
                                               color: Colors.grey[600],

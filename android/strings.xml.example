@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Replace these with your actual Facebook App ID and Client Token from Facebook Developer Console -->
+    <!-- Get them from: https://developers.facebook.com/apps/ -->
+    <string name="facebook_app_id">YOUR_APP_ID_HERE</string>
+    <string name="facebook_client_token">YOUR_CLIENT_TOKEN_HERE</string>
+</resources>

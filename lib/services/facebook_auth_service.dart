@@ -59,7 +59,7 @@ class FacebookAuthService {
 
       print('🔵 Backend response: $response');
 
-      if (response['status'] == 'success') {
+      if (response['success'] == true) {
         final data = response['data'];
 
         // Save tokens

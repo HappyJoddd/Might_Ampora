@@ -216,6 +216,7 @@ class _ManualDetailPageState extends State<ManualDetailPage> {
                                 _buildInputField(
                                   controller: _deviceAgeController,
                                   hintText: '1 year',
+                                  keyboardType: TextInputType.number,
                                 ),
                               ],
                             ),

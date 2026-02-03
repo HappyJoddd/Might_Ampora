@@ -314,6 +314,40 @@ class _RenewableEnergyEstimationState extends State<RenewableEnergyEstimation> {
                     ],
                   ),
 
+                  /// ⬅️ Back Button
+                  SafeArea(
+                    child: Padding(
+                      padding: EdgeInsets.all(screenWidth * 0.04),
+                      child: GestureDetector(
+                        onTap: () => Navigator.pop(context),
+                        child: Container(
+                          width: screenWidth * 0.1,
+                          height: screenWidth * 0.1,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Colors.white,
+                            border: Border.all(
+                              color: const Color(0xFF2D8B6E),
+                              width: 2,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.1),
+                                blurRadius: 8,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: Icon(
+                            Icons.arrow_back,
+                            color: const Color(0xFF2D8B6E),
+                            size: screenWidth * 0.05,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+
                   /// ☀️ Bottom sheet with live data
                   Positioned(
                     bottom: 0,

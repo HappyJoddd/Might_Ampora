@@ -951,16 +951,26 @@ class _HomeScreenState extends State<HomeScreen> {
                       },
                     ),
                     // Profile avatar
-                    CircleAvatar(
-                      radius: 25,
-                      backgroundColor: const Color(0xFF1B5E20),
-                      child: Text(
-                        _userInitials,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                          fontFamily: 'WorkSansB',
+                    GestureDetector(
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const ProfileScreen(),
+                          ),
+                        );
+                      },
+                      child: CircleAvatar(
+                        radius: 25,
+                        backgroundColor: const Color(0xFF1B5E20),
+                        child: Text(
+                          _userInitials,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                            fontFamily: 'WorkSansB',
+                          ),
                         ),
                       ),
                     ),
