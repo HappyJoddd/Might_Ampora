@@ -108,58 +108,60 @@ Future<void> _onContinue() async {
 
     if (result['success'] == true) {
       final data = result['data'] ?? {};
+      final userExists = data['userExists'] ?? false;
 
-      final accessToken = data['accessToken']?.toString() ?? '';
-      final refreshToken = data['refreshToken']?.toString() ?? '';
+      if (userExists) {
+        // Existing user - save tokens and go to home
+        final accessToken = data['accessToken']?.toString() ?? '';
+        final refreshToken = data['refreshToken']?.toString() ?? '';
 
-      // 🔒 Save tokens securely before anything else
-      if (accessToken.isNotEmpty && refreshToken.isNotEmpty) {
-        await AuthStorage.saveTokens(
-          accessToken: accessToken,
-          refreshToken: refreshToken,
+        if (accessToken.isNotEmpty && refreshToken.isNotEmpty) {
+          await AuthStorage.saveTokens(
+            accessToken: accessToken,
+            refreshToken: refreshToken,
+          );
+        }
+
+        await AuthStorage.setLoggedIn(true);
+        await AuthStorage.setHasRegistered(true);
+
+        // Save user data
+        final user = data['user'] ?? {};
+        await AuthStorage.saveUserDetails(
+          userId: user['id'],
+          name: user['name'],
+          email: user['email'],
+          phone: user['phone'] ?? phone,
+          location: user['location'],
         );
-      }
 
-      // ✅ Mark user as logged in
-      await AuthStorage.setLoggedIn(true);
+        print('✅ OTP Login successful!');
+        print('📱 User providers: ${user['providers']}');
 
-      // ✅ Save user data if returned
-      await AuthStorage.saveUserDetails(
-        name: data['user']?['name'],
-        email: data['user']?['email'],
-        phone: data['user']?['phone'] ?? phone,
-        location: data['user']?['location'],
-      );
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("✅ Welcome back!")),
+        );
 
-      // 🔍 Check if user profile already has basic info
-      final name = data['user']?['name'] ?? userDetails['name'];
-      final email = data['user']?['email'] ?? userDetails['email'];
-      final location = data['user']?['location'] ?? userDetails['location'];
-
-      final hasProfileInfo =
-          (name != null && name.toString().isNotEmpty) &&
-          (email != null && email.toString().isNotEmpty) &&
-          (location != null && location.toString().isNotEmpty);
-
-      // ✅ Navigate
-      if (hasProfileInfo) {
-        // Existing user → Home
+        // Go to home page
         Navigator.pushNamedAndRemoveUntil(
           context,
           RouteName.home,
           (route) => false,
         );
       } else {
-        // New user → RegisterPage
+        // New user - go to registration page
+        await AuthStorage.setLoggedIn(false);
+        await AuthStorage.setHasRegistered(false);
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("✅ OTP verified! Please complete registration.")),
+        );
+
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (_) => const RegisterPage()),
         );
       }
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("✅ OTP verified successfully!")),
-      );
     } else {
       await AuthStorage.clearAll();
       ScaffoldMessenger.of(context).showSnackBar(

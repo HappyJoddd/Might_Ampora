@@ -69,6 +69,7 @@ Future<void> _handleRegistration() async {
 
       // 🧾 Save user details locally
       await AuthStorage.saveUserDetails(
+        userId: user['id'],
         name: user['name'] ?? name,
         email: user['email'] ?? email,
         phone: phone,
@@ -78,6 +79,9 @@ Future<void> _handleRegistration() async {
       // 🟢 Mark as registered and logged in
       await AuthStorage.setHasRegistered(true);
       await AuthStorage.setLoggedIn(true);
+
+      print('✅ OTP Registration successful!');
+      print('📱 User providers: ${user['providers']}');
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("✅ Registration successful! Welcome.")),

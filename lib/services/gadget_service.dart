@@ -1,14 +1,16 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:path/path.dart';
 
 class GadgetService {
-  static const String baseUrl = "https://might-ampora-backend-447t.onrender.com";
+  static final String baseUrl = dotenv.env['BACKEND_URL'] ?? 
+    "https://might-ampora-backend-p4tz.onrender.com/api/v1";
 
   static Future<dynamic> recognizeGadget(File imageFile) async {
     try {
-      var uri = Uri.parse("$baseUrl/api/v1/gadgets/recognize");
+      var uri = Uri.parse("$baseUrl/gadgets/recognize");
       var request = http.MultipartRequest("POST", uri);
       print("URI: $uri");
       

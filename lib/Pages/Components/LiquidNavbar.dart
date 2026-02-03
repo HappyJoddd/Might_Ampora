@@ -209,18 +209,7 @@ class _LiquidNavbarState extends State<LiquidNavbar>
     final isSelected = widget.currentIndex == index;
     return GestureDetector(
       onTap: () {
-        // Don't navigate if already on the selected page
-        if (widget.currentIndex == index) return;
-        
         widget.onItemSelected(index);
-        // Navigate based on index
-        if (index == 0) {
-          // Home icon - navigate to HomeScreen
-          Get.off(() => const HomeScreen());
-        } else if (index == 2) {
-          // Profile icon - navigate to ProfilePage
-          Get.off(() => const ProfileScreen());
-        }
       },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 300),

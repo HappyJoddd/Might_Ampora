@@ -1,45 +1,51 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'dart:convert';
 import 'dart:io';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'detail.dart';
-import 'package:http/http.dart' as http;
 
-
-// Use environment variable for backend URL
-final String baseUrl = dotenv.env['BACKEND_URL'] ?? 
-  "https://might-ampora-backend-p4tz.onrender.com/api/v1";
-
-
-class ExtraDetailPage extends StatefulWidget {
+class EditDetailsPage extends StatefulWidget {
   final File imageFile;
-  final dynamic data; // JSON string or Map
+  final Map<String, dynamic> data;
 
-  const ExtraDetailPage({Key? key, required this.imageFile, required this.data})
-    : super(key: key);
+  const EditDetailsPage({
+    Key? key,
+    required this.imageFile,
+    required this.data,
+  }) : super(key: key);
 
   @override
-  State<ExtraDetailPage> createState() => _ExtraDetailPageState();
+  State<EditDetailsPage> createState() => _EditDetailsPageState();
 }
 
-class _ExtraDetailPageState extends State<ExtraDetailPage> {
+class _EditDetailsPageState extends State<EditDetailsPage> {
   final _formKey = GlobalKey<FormState>();
-  final _powerRatingController = TextEditingController();
-  final _usageController = TextEditingController();
-  final _perUnitCostController = TextEditingController();
-  final _deviceAgeController = TextEditingController();
-
-  String mainName = "Unknown Appliance";
-  int selectedStarRating = 3; // Example default rating
+  final TextEditingController _deviceNameController = TextEditingController();
+  final TextEditingController _powerRatingController = TextEditingController();
+  final TextEditingController _usageController = TextEditingController();
+  final TextEditingController _perUnitCostController = TextEditingController();
+  final TextEditingController _deviceAgeController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
-    _parseBackendData();
+    // Pre-fill with existing data
+    _deviceNameController.text = widget.data['deviceName']?.toString() ?? '';
+    _powerRatingController.text = widget.data['powerRating']?.toString() ?? '';
+    _usageController.text = widget.data['usageHours']?.toString() ?? '';
+    _perUnitCostController.text = widget.data['perUnitCost']?.toString() ?? '6';
+    _deviceAgeController.text = widget.data['deviceAge']?.toString() ?? '';
   }
 
-  /// ✅ Fixed navigation + correct field references
+  @override
+  void dispose() {
+    _deviceNameController.dispose();
+    _powerRatingController.dispose();
+    _usageController.dispose();
+    _perUnitCostController.dispose();
+    _deviceAgeController.dispose();
+    super.dispose();
+  }
+
   void _calculateCost() {
     if (_formKey.currentState!.validate()) {
       final double power =
@@ -58,23 +64,23 @@ class _ExtraDetailPageState extends State<ExtraDetailPage> {
           ) ??
           6;
 
-      // 🔹 Energy calculations
+      // Energy calculations
       final double dailyConsumption = (power * hours) / 1000; // kWh/day
       final double monthlyCost = dailyConsumption * costPerUnit * 30; // ₹/month
       final double co2PerDay = dailyConsumption * 0.82; // kg/day
 
+      // Navigate back to detail page with updated data
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
           builder: (context) => DeviceDetailsPage(
             imageFile: widget.imageFile,
             data: {
-              "deviceName": mainName,
+              "deviceName": _deviceNameController.text,
               "powerRating": power.toStringAsFixed(1),
               "usageHours": hours.toStringAsFixed(1),
               "perUnitCost": costPerUnit.toStringAsFixed(2),
               "deviceAge": _deviceAgeController.text,
-              "beeRating": selectedStarRating,
               "dailyConsumption": dailyConsumption.toStringAsFixed(2),
               "monthlyCost": monthlyCost.toStringAsFixed(2),
               "co2PerDay": co2PerDay.toStringAsFixed(2),
@@ -90,6 +96,7 @@ class _ExtraDetailPageState extends State<ExtraDetailPage> {
     double screenWidth = MediaQuery.of(context).size.width;
     double screenHeight = MediaQuery.of(context).size.height;
 
+    // Set status bar color
     SystemChrome.setSystemUIOverlayStyle(
       const SystemUiOverlayStyle(
         statusBarColor: Colors.transparent,
@@ -103,8 +110,12 @@ class _ExtraDetailPageState extends State<ExtraDetailPage> {
       body: SafeArea(
         child: Column(
           children: [
+            // Header with back button and title
             Padding(
-              padding: EdgeInsets.all(screenWidth * 0.04),
+              padding: EdgeInsets.symmetric(
+                horizontal: screenWidth * 0.05,
+                vertical: screenHeight * 0.02,
+              ),
               child: Row(
                 children: [
                   GestureDetector(
@@ -129,17 +140,21 @@ class _ExtraDetailPageState extends State<ExtraDetailPage> {
                   SizedBox(width: screenWidth * 0.04),
                   Expanded(
                     child: Text(
-                      mainName,
+                      'Edit Device Details',
                       style: TextStyle(
                         fontSize: screenWidth * 0.055,
                         fontWeight: FontWeight.bold,
                         fontFamily: 'WorkSansB',
+                        color: Colors.black,
+                        height: 1.2,
                       ),
                     ),
                   ),
                 ],
               ),
             ),
+
+            // Form content
             Expanded(
               child: SingleChildScrollView(
                 padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.05),
@@ -149,27 +164,45 @@ class _ExtraDetailPageState extends State<ExtraDetailPage> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       SizedBox(height: screenHeight * 0.02),
-                      _buildLabel('Power Rating:'),
+
+                      // Device Name field
+                      _buildLabel('Device Name'),
+                      _buildInputField(
+                        controller: _deviceNameController,
+                        hintText: 'Enter device name',
+                        readOnly: false,
+                      ),
+
+                      SizedBox(height: screenHeight * 0.02),
+
+                      // Power Rating field
+                      _buildLabel('Power Rating (Watts)'),
                       _buildInputField(
                         controller: _powerRatingController,
-                        hintText: '~75 Watts',
+                        hintText: 'Enter power rating in watts',
                         keyboardType: TextInputType.number,
                       ),
+
                       SizedBox(height: screenHeight * 0.02),
-                      _buildLabel('Average Daily Usage:'),
+
+                      // Average Daily Usage field
+                      _buildLabel('Average Daily Usage (Hours)'),
                       _buildInputField(
                         controller: _usageController,
                         hintText: '5 hours/day',
                         keyboardType: TextInputType.number,
                       ),
+
                       SizedBox(height: screenHeight * 0.02),
+
+                      // Per unit cost and Device age (side by side)
                       Row(
                         children: [
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                _buildLabel('Per unit cost'),
+                                _buildLabel('Per Unit Cost (₹)'),
                                 _buildInputField(
                                   controller: _perUnitCostController,
                                   hintText: '₹6/unit',
@@ -193,12 +226,15 @@ class _ExtraDetailPageState extends State<ExtraDetailPage> {
                           ),
                         ],
                       ),
+
                       SizedBox(height: screenHeight * 0.04),
                     ],
                   ),
                 ),
               ),
             ),
+
+            // Calculate button
             Padding(
               padding: EdgeInsets.symmetric(
                 horizontal: screenWidth * 0.05,
@@ -233,108 +269,71 @@ class _ExtraDetailPageState extends State<ExtraDetailPage> {
     );
   }
 
-  /// ✅ Safely parse backend data
-  void _parseBackendData() {
-    try {
-      dynamic parsed = widget.data is String
-          ? jsonDecode(widget.data)
-          : widget.data;
-
-      if (parsed is! Map) {
-        debugPrint("❌ Data is not a Map");
-        return;
-      }
-
-      debugPrint("✅ Raw backend data: $parsed");
-
-      // Extract nested "data" object
-      Map<String, dynamic> innerData = {};
-      if (parsed.containsKey("data")) {
-        innerData = Map<String, dynamic>.from(parsed["data"]);
-      }
-
-      setState(() {
-        mainName = innerData["mainName"]?.toString() ?? "Unknown Appliance";
-        String? rating = innerData["starRating"]?.toString();
-
-        if (rating != null && rating != "Not Visible") {
-          // Try to parse numeric star rating (e.g., "3 Star" -> 3)
-          final match = RegExp(r'(\d+)').firstMatch(rating);
-          selectedStarRating = match != null ? int.parse(match.group(1)!) : 3;
-        } else {
-          selectedStarRating = 3; // Default to 3 stars
-        }
-
-        // ✅ NEW: Backend now returns estimatedWattage directly from Hugging Face
-        String? estimatedWattage = innerData["estimatedWattage"]?.toString();
-        if (estimatedWattage != null && estimatedWattage.isNotEmpty) {
-          _powerRatingController.text = estimatedWattage;
-        }
-
-        // ✅ NEW: Show confidence if available
-        String? confidence = innerData["confidence"]?.toString();
-        if (confidence != null) {
-          debugPrint("🎯 Detection Confidence: $confidence");
-        }
-      });
-
-      debugPrint("✅ FINAL mainName: $mainName");
-      debugPrint("✅ FINAL star rating: $selectedStarRating");
-      debugPrint("✅ FINAL wattage: ${_powerRatingController.text}");
-    } catch (e, st) {
-      debugPrint("❌ Error parsing backend data: $e\n$st");
-    }
-  }
-
-  // ✅ REMOVED: _fetchEstimatedWattage() - Backend now returns wattage directly with recognition response
-  // No need for separate API call since Hugging Face model returns everything in one go
-
-  Widget _buildLabel(String label) => Padding(
-    padding: const EdgeInsets.only(bottom: 8),
-    child: Text(
-      label,
-      style: const TextStyle(
-        fontSize: 14,
-        fontWeight: FontWeight.w500,
-        fontFamily: 'WorkSansM',
-        color: Colors.black,
+  Widget _buildLabel(String label) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Text(
+        label,
+        style: const TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w500,
+          fontFamily: 'WorkSansM',
+          color: Colors.black,
+        ),
       ),
-    ),
-  );
+    );
+  }
 
   Widget _buildInputField({
     required TextEditingController controller,
     required String hintText,
     bool readOnly = false,
     TextInputType keyboardType = TextInputType.text,
-  }) => TextFormField(
-    controller: controller,
-    readOnly: readOnly,
-    keyboardType: keyboardType,
-    decoration: InputDecoration(
-      hintText: hintText,
-      hintStyle: TextStyle(color: Colors.grey.shade600, fontSize: 15),
-      filled: true,
-      fillColor: Colors.grey.shade50,
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: Colors.grey.shade200, width: 1),
+  }) {
+    return TextFormField(
+      controller: controller,
+      readOnly: readOnly,
+      keyboardType: keyboardType,
+      decoration: InputDecoration(
+        hintText: hintText,
+        hintStyle: TextStyle(
+          color: Colors.grey.shade600,
+          fontSize: 15,
+        ),
+        filled: true,
+        fillColor: Colors.grey.shade50,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(
+            color: Colors.grey.shade200,
+            width: 1,
+          ),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(
+            color: Colors.grey.shade200,
+            width: 1,
+          ),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(
+            color: Color(0xFF4CAF50),
+            width: 1.5,
+          ),
+        ),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 16,
+        ),
       ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: Colors.grey.shade200, width: 1),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Color(0xFF4CAF50), width: 1.5),
-      ),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-    ),
-    validator: (value) {
-      if (!readOnly && (value == null || value.isEmpty)) {
-        return 'This field is required';
-      }
-      return null;
-    },
-  );
+      validator: (value) {
+        if (!readOnly && (value == null || value.isEmpty)) {
+          return 'This field is required';
+        }
+        return null;
+      },
+    );
+  }
 }

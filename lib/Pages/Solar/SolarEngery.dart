@@ -5,6 +5,8 @@ import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import '../Components/LiquidNavbar.dart';
+import '../Home/HomeScreen.dart';
+import '../Home/Profilepage.dart';
 
 class RenewableEnergyEstimation extends StatefulWidget {
   const RenewableEnergyEstimation({super.key});
@@ -246,7 +248,17 @@ class _RenewableEnergyEstimationState extends State<RenewableEnergyEstimation> {
     setState(() {
       _selectedNavIndex = index;
     });
-    if (index == 0) Navigator.pop(context);
+    if (index == 0) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const HomeScreen()),
+      );
+    } else if (index == 2) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => const ProfileScreen()),
+      );
+    }
   }
 
   @override

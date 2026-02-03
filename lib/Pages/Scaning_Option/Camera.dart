@@ -4,6 +4,7 @@ import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'Extradetail.dart';
 import 'package:mime/mime.dart'; // for detecting mime type
 import 'package:http_parser/http_parser.dart'; // for MediaType
@@ -25,11 +26,12 @@ class _CameraGalleryPickerPageState extends State<CameraGalleryPickerPage> {
   bool _isCameraInitialized = false;
   final ImagePicker _picker = ImagePicker();
 
-  // ✅ Upload function (replaces GadgetService call)
+  // ✅ Upload function using Hugging Face backend
 Future<Map<String, dynamic>?> _uploadImage(File imageFile) async {
   try {
-    final uri = Uri.parse(
-        "https://might-ampora-backend-447t.onrender.com/api/v1/gadgets/recognize");
+    final baseUrl = dotenv.env['BACKEND_URL'] ?? 
+      "https://might-ampora-backend-p4tz.onrender.com/api/v1";
+    final uri = Uri.parse("$baseUrl/gadgets/recognize");
 
     // ✅ Detect the MIME type (e.g., image/jpeg or image/png)
     final mimeType = lookupMimeType(imageFile.path) ?? 'image/jpeg';
@@ -82,6 +84,22 @@ Future<Map<String, dynamic>?> _uploadImage(File imageFile) async {
     if (result != null && result['success'] == true) {
       debugPrint("✅ Backend result: $result");
 
+      // Extract mainName and confidence from result
+      final data = result['data'];
+      final mainName = data['mainName'] ?? '';
+      final confidenceStr = data['confidence'] ?? '0%';
+      
+      // Parse confidence percentage (e.g., "75.50%" -> 75.50)
+      final confidenceValue = double.tryParse(
+        confidenceStr.toString().replaceAll('%', '').trim()
+      ) ?? 0.0;
+
+      // Check if it's "Other" or confidence is less than 60%
+      if (mainName.toLowerCase() == 'other' || confidenceValue < 60.0) {
+        _showRetryDialog(mainName, confidenceValue);
+        return;
+      }
+
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
@@ -98,6 +116,65 @@ Future<Map<String, dynamic>?> _uploadImage(File imageFile) async {
         ),
       );
     }
+  }
+
+  void _showRetryDialog(String detectedName, double confidence) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.info_outline, color: Colors.orange, size: 28),
+            SizedBox(width: 10),
+            Expanded(child: Text('Unable to Recognize')),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'We couldn\'t identify this as a home appliance. Let\'s try again!',
+              style: TextStyle(fontSize: 15, height: 1.4),
+            ),
+            SizedBox(height: 15),
+            Text(
+              'For best results, please ensure:',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+            ),
+            SizedBox(height: 8),
+            _buildTipRow('Good lighting on the appliance'),
+            _buildTipRow('Clear, steady angle'),
+            _buildTipRow('Entire appliance is visible in frame'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(
+              'Got it, Try Again',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTipRow(String tip) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.check_circle_outline, size: 18, color: Colors.green),
+          SizedBox(width: 8),
+          Expanded(
+            child: Text(tip, style: TextStyle(fontSize: 13, height: 1.3)),
+          ),
+        ],
+      ),
+    );
   }
 
   @override

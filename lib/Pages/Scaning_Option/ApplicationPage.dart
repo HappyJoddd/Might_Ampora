@@ -30,7 +30,7 @@ class _ApplianceSelectionPageState extends State<ApplianceSelectionPage> {
         const SnackBar(content: Text('Add Button Pressed!')),
       );
     } else if (index == 2) {
-      Navigator.push(
+      Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (context) => const ProfileScreen()),
       );
@@ -118,7 +118,8 @@ class _ApplianceSelectionPageState extends State<ApplianceSelectionPage> {
                       screenHeight,
                       'Fan',
                       'images/Appliance/Fan.png',
-                      const Color(0xFF4CAF50),
+                      Colors.grey.shade600,
+                      '75',
                     ),
                     _buildApplianceCard(
                       context,
@@ -127,6 +128,7 @@ class _ApplianceSelectionPageState extends State<ApplianceSelectionPage> {
                       'Refrigerator',
                       'images/Appliance/Fridge.png',
                       Colors.grey.shade600,
+                      '400',
                     ),
                     _buildApplianceCard(
                       context,
@@ -135,6 +137,7 @@ class _ApplianceSelectionPageState extends State<ApplianceSelectionPage> {
                       'Air Conditioner',
                       'images/Appliance/AC.png',
                       Colors.grey.shade600,
+                      '2000',
                     ),
                     _buildApplianceCard(
                       context,
@@ -143,6 +146,7 @@ class _ApplianceSelectionPageState extends State<ApplianceSelectionPage> {
                       'Washing Machine',
                       'images/Appliance/WashingMachine.png',
                       Colors.grey.shade600,
+                      '700',
                     ),
                     _buildApplianceCard(
                       context,
@@ -151,6 +155,7 @@ class _ApplianceSelectionPageState extends State<ApplianceSelectionPage> {
                       'Microwave Oven',
                       'images/Appliance/Microwave.png',
                       Colors.grey.shade600,
+                      '1200',
                     ),
                     _buildApplianceCard(
                       context,
@@ -159,6 +164,7 @@ class _ApplianceSelectionPageState extends State<ApplianceSelectionPage> {
                       'Television',
                       'images/Appliance/TV.png',
                       Colors.grey.shade600,
+                      '100',
                     ),
                     _buildApplianceCard(
                       context,
@@ -167,6 +173,7 @@ class _ApplianceSelectionPageState extends State<ApplianceSelectionPage> {
                       'Water Heater',
                       'images/Appliance/WaterHeater.png',
                       Colors.grey.shade600,
+                      '2000',
                     ),
                     _buildApplianceCard(
                       context,
@@ -175,6 +182,7 @@ class _ApplianceSelectionPageState extends State<ApplianceSelectionPage> {
                       'Room Heater',
                       'images/Appliance/RoomHeater.png',
                       Colors.grey.shade600,
+                      '1500',
                     ),
                     _buildApplianceCard(
                       context,
@@ -183,6 +191,7 @@ class _ApplianceSelectionPageState extends State<ApplianceSelectionPage> {
                       'Air Cooler',
                       'images/Appliance/AirCooler.png',
                       Colors.grey.shade600,
+                      '200',
                     ),
                     _buildAddCard(
                       context,
@@ -207,6 +216,7 @@ class _ApplianceSelectionPageState extends State<ApplianceSelectionPage> {
             onItemSelected: _onNavItemSelected,
           ),
         ),
+        SizedBox(height: screenHeight * 0.02),
       ],
     ),
     );
@@ -219,15 +229,17 @@ class _ApplianceSelectionPageState extends State<ApplianceSelectionPage> {
     String title,
     String imagePath,
     Color textColor,
+    String powerRating,
   ) {
     return GestureDetector(
       onTap: () {
-        // Navigate directly to manual detail page with appliance name
+        // Navigate directly to manual detail page with appliance name and power rating
         Navigator.push(
           context,
           MaterialPageRoute(
             builder: (context) => ManualDetailPage(
               applianceName: title,
+              powerRating: powerRating,
             ),
           ),
         );
@@ -289,8 +301,16 @@ class _ApplianceSelectionPageState extends State<ApplianceSelectionPage> {
   ) {
     return GestureDetector(
       onTap: () {
-        // Handle add new appliance
-        print('Add new appliance');
+        // Navigate to manual detail page with empty device name and power rating
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ManualDetailPage(
+              applianceName: "",
+              powerRating: "",
+            ),
+          ),
+        );
       },
       child: Container(
         decoration: BoxDecoration(
@@ -301,12 +321,32 @@ class _ApplianceSelectionPageState extends State<ApplianceSelectionPage> {
             width: 1.5,
           ),
         ),
-        child: Center(
-          child: Icon(
-            Icons.add,
-            size: screenWidth * 0.15,
-            color: const Color(0xFF4CAF50),
-          ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.add_circle_outline,
+              size: screenWidth * 0.11,
+              color: const Color(0xFF4CAF50),
+            ),
+            SizedBox(height: screenHeight * 0.008),
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: screenWidth * 0.02),
+              child: Text(
+                'Other Appliances',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: screenWidth * 0.032,
+                  fontWeight: FontWeight.w500,
+                  fontFamily: 'WorkSansM',
+                  color: const Color(0xFF4CAF50),
+                  height: 1.1,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
         ),
       ),
     );

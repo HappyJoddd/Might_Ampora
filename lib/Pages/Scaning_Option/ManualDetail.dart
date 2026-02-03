@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'detail2.dart';
 
 class ManualDetailPage extends StatefulWidget {
   final String applianceName;
+  final String powerRating;
 
   const ManualDetailPage({
     Key? key,
     required this.applianceName,
+    required this.powerRating,
   }) : super(key: key);
 
   @override
@@ -15,14 +18,24 @@ class ManualDetailPage extends StatefulWidget {
 
 class _ManualDetailPageState extends State<ManualDetailPage> {
   final _formKey = GlobalKey<FormState>();
-  final TextEditingController _brandController = TextEditingController();
+  final TextEditingController _deviceNameController = TextEditingController();
+  final TextEditingController _powerRatingController = TextEditingController();
   final TextEditingController _usageController = TextEditingController();
   final TextEditingController _perUnitCostController = TextEditingController();
   final TextEditingController _deviceAgeController = TextEditingController();
 
   @override
+  void initState() {
+    super.initState();
+    // Initialize controllers with passed values
+    _deviceNameController.text = widget.applianceName;
+    _powerRatingController.text = widget.powerRating;
+  }
+
+  @override
   void dispose() {
-    _brandController.dispose();
+    _deviceNameController.dispose();
+    _powerRatingController.dispose();
     _usageController.dispose();
     _perUnitCostController.dispose();
     _deviceAgeController.dispose();
@@ -31,17 +44,44 @@ class _ManualDetailPageState extends State<ManualDetailPage> {
 
   void _calculateCost() {
     if (_formKey.currentState!.validate()) {
-      final usage = double.tryParse(_usageController.text) ?? 0;
-      final perUnitCost = double.tryParse(_perUnitCostController.text) ?? 0;
-      
-      // Calculate monthly cost
-      final estimatedMonthlyCost = usage * perUnitCost * 30;
+      final double power =
+          double.tryParse(
+            _powerRatingController.text.replaceAll(RegExp(r'[^0-9.]'), ''),
+          ) ??
+          0;
+      final double hours =
+          double.tryParse(
+            _usageController.text.replaceAll(RegExp(r'[^0-9.]'), ''),
+          ) ??
+          0;
+      final double costPerUnit =
+          double.tryParse(
+            _perUnitCostController.text.replaceAll(RegExp(r'[^0-9.]'), ''),
+          ) ??
+          6;
 
-      // Show success message or navigate to results
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Estimated Monthly Cost: ₹${estimatedMonthlyCost.toStringAsFixed(2)}/month'),
-          backgroundColor: const Color(0xFF4CAF50),
+      // Energy calculations
+      final double dailyConsumption = (power * hours) / 1000; // kWh/day
+      final double monthlyCost = dailyConsumption * costPerUnit * 30; // ₹/month
+      final double co2PerDay = dailyConsumption * 0.82; // kg/day
+
+      // Navigate to detail2 page with calculated data
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (context) => DeviceDetailsPage2(
+            data: {
+              "deviceName": _deviceNameController.text,
+              "powerRating": power.toStringAsFixed(1),
+              "usageHours": hours.toStringAsFixed(1),
+              "perUnitCost": costPerUnit.toStringAsFixed(2),
+              "deviceAge": _deviceAgeController.text,
+              "beeRating": 3, // Default star rating
+              "dailyConsumption": dailyConsumption.toStringAsFixed(2),
+              "monthlyCost": monthlyCost.toStringAsFixed(2),
+              "co2PerDay": co2PerDay.toStringAsFixed(2),
+            },
+          ),
         ),
       );
     }
@@ -121,21 +161,22 @@ class _ManualDetailPageState extends State<ManualDetailPage> {
                     children: [
                       SizedBox(height: screenHeight * 0.02),
 
-                      // Device field (read-only)
-                      _buildLabel('Device'),
+                      // Device Name field
+                      _buildLabel('Device Name'),
                       _buildInputField(
-                        controller: TextEditingController(text: widget.applianceName),
-                        hintText: widget.applianceName,
-                        readOnly: true,
+                        controller: _deviceNameController,
+                        hintText: 'Enter device name',
+                        readOnly: false,
                       ),
 
                       SizedBox(height: screenHeight * 0.02),
 
-                      // Brand field
-                      _buildLabel('Brand'),
+                      // Power Rating field
+                      _buildLabel('Power Rating (Watts)'),
                       _buildInputField(
-                        controller: _brandController,
-                        hintText: 'Abomberg Renesa BLDC Motor',
+                        controller: _powerRatingController,
+                        hintText: 'Enter power rating in watts',
+                        keyboardType: TextInputType.number,
                       ),
 
                       SizedBox(height: screenHeight * 0.02),
@@ -171,7 +212,7 @@ class _ManualDetailPageState extends State<ManualDetailPage> {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                _buildLabel('How old is your device'),
+                                _buildLabel('Device\'s Age'),
                                 _buildInputField(
                                   controller: _deviceAgeController,
                                   hintText: '1 year',

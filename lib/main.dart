@@ -3,12 +3,20 @@ import 'package:get/get.dart';
 import 'package:might_ampora/Routes/routes.dart';
 import 'package:might_ampora/Routes/routes_name.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:might_ampora/services/midnight_sync_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // 🔹 Load environment variables
   await dotenv.load(fileName: ".env");
+
+  // 🔥 Initialize Firebase
+  await Firebase.initializeApp();
+
+  // ⏰ Initialize midnight sync service
+  MidnightSyncService().initialize();
 
   runApp(const MyApp());
 }

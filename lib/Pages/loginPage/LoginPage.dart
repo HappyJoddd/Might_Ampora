@@ -5,6 +5,7 @@ import 'package:might_ampora/Routes/routes_name.dart';
 import 'package:might_ampora/services/api_service.dart';
 import 'package:might_ampora/services/auth_storage.dart';
 import 'package:might_ampora/services/google_auth_service.dart';
+import 'package:might_ampora/services/facebook_auth_service.dart';
 import 'Otp.dart';
 
 class LoginPage extends StatefulWidget {
@@ -209,7 +210,39 @@ Future<void> _handleSendOtp() async {
                     label: "Continue with Facebook",
                     asset: "images/Facebook.png",
                     color: Colors.white,
-                    onTap: () => print("Facebook login pressed"),
+                    onTap: () async {
+                        setState(() => _isLoading = true);
+
+                        try {
+                          final result = await FacebookAuthService.signInWithFacebook();
+
+                          setState(() => _isLoading = false);
+
+                          if (!mounted) return;
+
+                          if (result['success'] == true) {
+                            Navigator.pushReplacementNamed(context, RouteName.home);
+                          } else {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text("❌ Failed: ${result['message'] ?? 'Unknown error'}"),
+                                duration: const Duration(seconds: 4),
+                              ),
+                            );
+                          }
+                        } catch (e) {
+                          setState(() => _isLoading = false);
+                          
+                          if (!mounted) return;
+                          
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text("❌ Facebook Sign-In failed: $e"),
+                              duration: const Duration(seconds: 4),
+                            ),
+                          );
+                        }
+                      },
                     screenWidth: screenWidth,
                     screenHeight: screenHeight,
                   ),

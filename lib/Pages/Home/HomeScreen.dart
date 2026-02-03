@@ -6,12 +6,19 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_background_service/flutter_background_service.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:sensors_plus/sensors_plus.dart';
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 import 'package:http/http.dart' as http;
 import '../Components/LiquidNavbar.dart';
+import 'Profilepage.dart';
 import '../Scaning_Option/EnergyPage.dart';
 import 'package:might_ampora/services/auth_storage.dart';
+import 'package:might_ampora/services/activity_service.dart';
+import 'package:might_ampora/services/midnight_sync_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({Key? key}) : super(key: key);
@@ -24,31 +31,232 @@ class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
   int _steps = 0;
   StreamSubscription<StepCount>? _stepCountStream;
-  int _dailyStepGoal = 10000;
-  DateTime _selectedDate = DateTime.now();
+  
+  // Normalize to date only (remove time component)
+  DateTime get _todayDate => DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
+  late DateTime _selectedDate;
   DateTime _focusedDay = DateTime.now();
+  
+  // Selected date activity data
+  int _selectedDateSteps = 0;
+  double _selectedDateDriven = 0.0;
+  double _selectedDateCO2Saved = 0.0;
+  Map<String, Map<String, dynamic>> _activityDataCache = {}; // Cache for fetched data
+  
+  // CO2 calculation and target
+  static const double _co2Target = 10.0; // Daily CO2 target in kg
+  double _currentCO2Saved = 0.0; // Real-time calculated CO2 saved for today
+  Timer? _co2UpdateTimer;
+  String _mascotImage = 'images/Mascot_good.png'; // Current mascot image
+  
   int _aqiValue = 86; // Default AQI value (int for UI)
   String? _location;
   String _userName = 'User'; // User's first name
   String _cityName = 'Your City'; // User's current city
   String _userInitials = 'U'; // User's initials (first + last)
-  Timer? _midnightTimer;
+  
+  // Driving tracking variables
+  double _distanceDriven = 0.0; // in kilometers
+  Position? _lastPosition;
+  Timer? _locationTimer;
+  bool _isTracking = false;
+  
+  // Calendar scroll controller
+  final ScrollController _calendarScrollController = ScrollController();
+  DateTime? _lastPositionTime;
+  static const double _drivingSpeedThreshold = 20.0; // 20 km/h
+  static const double _minAccuracy = 50.0; // meters - ignore positions with accuracy worse than this
+  static const double _minDistanceThreshold = 20.0; // meters - minimum distance to count
+  
+  // Accelerometer tracking for vehicle detection
+  StreamSubscription<AccelerometerEvent>? _accelerometerSubscription;
+  double _vibrationIntensity = 0.0;
+  List<double> _recentAccelReadings = [];
+  static const int _accelWindowSize = 10; // Keep last 10 readings
+  static const double _vehicleVibrationThreshold = 1.5; // m/s² - typical vehicle vibration
 
   @override
   void initState() {
     super.initState();
+    _selectedDate = _todayDate; // Initialize with normalized today's date
     _loadSteps();
     _initPedometer();
     _loadUserData();
     _requestLocationPermissionAndFetch();
-    _scheduleMidnightReset();
+    MidnightSyncService().initialize(); // Singleton - only creates one timer
+    _loadDrivingDistance();
+    _initAccelerometer();
+    _startDrivingTracker();
+    _requestNotificationPermissionAndStartService();
+    _fetchActivityForDate(_selectedDate);
+    _startCO2UpdateTimer();
+    
+    // Scroll to center (today) after first frame
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_calendarScrollController.hasClients) {
+        // Today is at index 6 (0-5 past, 6 today, 7-9 future)
+        // Calculate position to center today
+        final itemWidth = MediaQuery.of(context).size.width * 0.13 + 2; // width + margin
+        final screenWidth = MediaQuery.of(context).size.width;
+        final centerOffset = (itemWidth * 6) - (screenWidth / 2) + (itemWidth / 2);
+        
+        _calendarScrollController.jumpTo(
+          centerOffset.clamp(0.0, _calendarScrollController.position.maxScrollExtent),
+        );
+      }
+    });
   }
 
   @override
   void dispose() {
     _stepCountStream?.cancel();
-    _midnightTimer?.cancel();
+    _locationTimer?.cancel();
+    _accelerometerSubscription?.cancel();
+    _co2UpdateTimer?.cancel();
+    _calendarScrollController.dispose();
     super.dispose();
+  }
+
+  /// Fetch activity data for selected date
+  Future<void> _fetchActivityForDate(DateTime date) async {
+    try {
+      final userDetails = await AuthStorage.getUserDetails();
+      final userId = userDetails['userId'];
+      
+      if (userId == null) return;
+      
+      // Check if date is today - use current values
+      final isToday = date.year == _todayDate.year &&
+          date.month == _todayDate.month &&
+          date.day == _todayDate.day;
+      
+      final dateKey = '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+      print('📅 Fetching activity for date: $dateKey (isToday: $isToday)');
+      
+      if (isToday) {
+        print('✅ Using today\'s live data: steps=$_steps, driven=${_distanceDriven.toStringAsFixed(2)}km, CO2=${_currentCO2Saved.toStringAsFixed(2)}kg');
+        setState(() {
+          _selectedDateSteps = _steps;
+          _selectedDateDriven = _distanceDriven;
+          _selectedDateCO2Saved = _currentCO2Saved;
+        });
+        return;
+      }
+      
+      // Check cache first
+      if (_activityDataCache.containsKey(dateKey)) {
+        final cached = _activityDataCache[dateKey]!;
+        print('✅ Using cached data for $dateKey: steps=${cached['steps']}, driven=${cached['drivenKm']}km');
+        setState(() {
+          _selectedDateSteps = cached['steps'] ?? 0;
+          _selectedDateDriven = cached['drivenKm'] ?? 0.0;
+          _selectedDateCO2Saved = cached['savedCO2'] ?? 0.0;
+        });
+        return;
+      }
+      
+      // Fetch from backend
+      print('🔄 Fetching from backend for $dateKey...');
+      final weekData = await ActivityService.getPastWeekActivity(userId);
+      print('📦 Backend returned ${weekData.length} activities');
+      
+      // Update cache
+      for (var activity in weekData) {
+        final activityDate = activity['date'];
+        print('  - Activity date: $activityDate, steps: ${activity['steps']}, driven: ${activity['drivenKm']}km');
+        _activityDataCache[activityDate] = {
+          'steps': (activity['steps'] ?? 0) is int ? activity['steps'] : (activity['steps'] ?? 0).toInt(),
+          'drivenKm': (activity['drivenKm'] ?? 0).toDouble(),
+          'savedCO2': (activity['savedCO2'] ?? 0).toDouble(),
+        };
+      }
+      
+      // Update UI with selected date data
+      if (_activityDataCache.containsKey(dateKey)) {
+        final data = _activityDataCache[dateKey]!;
+        print('✅ Found data for $dateKey: steps=${data['steps']}, driven=${data['drivenKm']}km');
+        setState(() {
+          _selectedDateSteps = data['steps'] ?? 0;
+          _selectedDateDriven = data['drivenKm'] ?? 0.0;
+          _selectedDateCO2Saved = data['savedCO2'] ?? 0.0;
+        });
+      } else {
+        // No data for this date
+        print('⚠️ No data found for $dateKey');
+        setState(() {
+          _selectedDateSteps = 0;
+          _selectedDateDriven = 0.0;
+          _selectedDateCO2Saved = 0.0;
+        });
+      }
+    } catch (e) {
+      print('❌ Error fetching activity for date: $e');
+      setState(() {
+        _selectedDateSteps = 0;
+        _selectedDateDriven = 0.0;
+        _selectedDateCO2Saved = 0.0;
+      });
+    }
+  }
+  
+  /// Calculate CO2 saved from steps and driven distance
+  double _calculateCO2Saved(int steps, double drivenKm) {
+    // Walking reduces CO2 by avoiding car usage
+    // Average person walks ~0.75 km per 1000 steps
+    // Car emits ~0.12 kg CO2 per km
+    // So walking saves: (steps / 1000) * 0.75 * 0.12 kg CO2
+    final co2SavedByWalking = (steps / 1000) * 0.75 * 0.12;
+    
+    // Driving emits CO2
+    // Car emits ~0.12 kg CO2 per km driven
+    final co2EmittedByDriving = drivenKm * 0.12;
+    
+    // Net CO2 saved = saved by walking - emitted by driving
+    return co2SavedByWalking - co2EmittedByDriving;
+  }
+  
+  /// Start timer to update CO2 calculation every minute
+  void _startCO2UpdateTimer() {
+    // Initial calculation
+    _updateCO2Calculation();
+    
+    // Update every minute (60 seconds)
+    _co2UpdateTimer = Timer.periodic(const Duration(minutes: 1), (timer) {
+      _updateCO2Calculation();
+    });
+  }
+  
+  /// Update CO2 calculation and mascot based on current steps and driven distance
+  void _updateCO2Calculation() {
+    if (!mounted) return;
+    
+    final co2Saved = _calculateCO2Saved(_steps, _distanceDriven);
+    String mascot;
+    
+    // Select mascot based on CO2 saved
+    if (co2Saved > 5.0) {
+      mascot = 'images/Mascot_good.png';
+    } else if (co2Saved >= 0.0) {
+      mascot = 'images/Mascot_mid.png';
+    } else {
+      mascot = 'images/Mascot_bad.png';
+    }
+    
+    setState(() {
+      _currentCO2Saved = co2Saved;
+      _mascotImage = mascot;
+      
+      // If today is selected, update the displayed values
+      final isToday = _selectedDate.year == _todayDate.year &&
+          _selectedDate.month == _todayDate.month &&
+          _selectedDate.day == _todayDate.day;
+      
+      if (isToday) {
+        _selectedDateSteps = _steps;
+        _selectedDateDriven = _distanceDriven;
+        _selectedDateCO2Saved = co2Saved;
+      }
+    });
   }
 
   /// Load user's name from storage
@@ -97,6 +305,7 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {
       _steps = prefs.getInt('dailySteps') ?? 0;
     });
+    _updateCO2Calculation();
   }
 
   /// Initialize pedometer to track steps
@@ -190,11 +399,15 @@ class _HomeScreenState extends State<HomeScreen> {
     dailySteps = dailySteps >= 0 ? dailySteps : 0;
     
     await prefs.setInt('dailySteps', dailySteps);
+    
+    // Also save with date key for midnight sync
+    await prefs.setInt('steps_$today', dailySteps);
 
     if (!mounted) return;
     setState(() {
       _steps = dailySteps;
     });
+    _updateCO2Calculation();
     
     debugPrint('Daily steps updated: $_steps (Sensor: ${event.steps}, Baseline: $baseline)');
   }
@@ -204,22 +417,7 @@ class _HomeScreenState extends State<HomeScreen> {
     debugPrint('Pedometer error: $error');
   }
 
-  void _scheduleMidnightReset() {
-    DateTime now = DateTime.now();
-    DateTime midnight = DateTime(now.year, now.month, now.day + 1);
-    Duration timeUntilMidnight = midnight.difference(now);
-
-    _midnightTimer = Timer(timeUntilMidnight, () {
-      if (!mounted) return;
-      _resetDailySteps();
-      _scheduleMidnightReset(); // Schedule next reset
-    });
-  }
-
-  Future<void> _resetDailySteps() async {
-    // Reset will be handled by _onStepCount checking the date
-    await _loadSteps();
-  }
+  // Midnight sync is now handled by MidnightSyncService singleton
 
   /// Robust location permission + fetch wrapper.
   /// If permission is deniedForever, prompts user to open app settings.
@@ -446,61 +644,49 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  void _showCalendarDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => Dialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                'Select Date',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontFamily: 'WorkSansB',
-                  color: Colors.black87,
-                ),
-              ),
-              const SizedBox(height: 16),
-              TableCalendar(
-                firstDay: DateTime.now().subtract(const Duration(days: 365)),
-                lastDay: DateTime.now(),
-                focusedDay: _focusedDay,
-                selectedDayPredicate: (day) => isSameDay(_selectedDate, day),
-                calendarFormat: CalendarFormat.month,
-                onDaySelected: (selectedDay, focusedDay) {
-                  if (!mounted) return;
-                  setState(() {
-                    _selectedDate = selectedDay;
-                    _focusedDay = focusedDay;
-                  });
-                  Navigator.pop(context);
-                },
-                calendarStyle: CalendarStyle(
-                  selectedDecoration: BoxDecoration(
-                    color: const Color(0xFF1E3A5F),
-                    shape: BoxShape.circle,
-                  ),
-                  todayDecoration: BoxDecoration(
-                    color: const Color(0xFF4CAF50),
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                headerStyle: HeaderStyle(
-                  formatButtonVisible: false,
-                  titleCentered: true,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+  /// Get mascot image based on CO2 saved
+  String _getMascotImage(double co2Saved) {
+    if (co2Saved > 5.0) {
+      return 'images/Mascot_good.png';
+    } else if (co2Saved >= 0.0) {
+      return 'images/Mascot_mid.png';
+    } else {
+      return 'images/Mascot_bad.png';
+    }
+  }
+
+  /// Get bottom message text based on CO2 saved
+  String _getBottomMessageText(double co2Saved) {
+    if (co2Saved > 5.0) {
+      return 'Great job! You\'re helping the planet\nwith your eco-friendly choices!';
+    } else if (co2Saved >= 0.0) {
+      return "You're doing okay! Keep building those sustainable habits to make a bigger impact !";
+    } else {
+      return "You're failing your green goals! Major improvement to reduce your environmental impact.";
+    }
+  }
+
+  /// Get bottom message color based on CO2 saved
+  Color _getBottomMessageColor(double co2Saved) {
+    if (co2Saved > 5.0) {
+      return const Color(0xFF14532B); // Dark green
+    } else if (co2Saved >= 0.0) {
+      return const Color(0xFFF59E0B); // Orange/amber
+    } else {
+      return  Color.fromARGB(255, 220, 38, 38); // Red
+    }
+  }
+
+  void _onDateSelected(DateTime date) async {
+    if (!mounted) return;
+    
+    // Normalize to date only (remove time component)
+    final normalizedDate = DateTime(date.year, date.month, date.day);
+    
+    setState(() {
+      _selectedDate = normalizedDate;
+    });
+    await _fetchActivityForDate(normalizedDate);
   }
 
   String _formatDate(DateTime date) {
@@ -530,13 +716,19 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _onNavItemSelected(int index) {
-    // LiquidNavbar handles navigation internally, just update the index
     setState(() {
       _selectedIndex = index;
     });
-    if (index == 1) {
+    if (index == 0) {
+      // Already on home page
+    } else if (index == 1) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Add Button Pressed!')),
+      );
+    } else if (index == 2) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const ProfileScreen()),
       );
     }
   }
@@ -654,41 +846,13 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                       _infoCard(
                         context,
-                        title: "Pedal your way to a healthier planet!",
-                        description: "Scan your appliances and track their impact!",
-                        buttonText: "Scan now !",
-                        imagePath: "images/Cycle.png",
-                        navigateToPage: const EnergyOnboardingPage(),
-                      ),
-                      _infoCard(
-                        context,
-                        title: "Add your routine",
-                        description: "Add your routines and see their impact on the environment",
-                        buttonText: "Add now !",
-                        imagePath: "images/Routine.png",
-                      ),
-                      _infoCard(
-                        context,
                         title: "Harness the power of the sun and wind",
                         description: "Find out what works for you today",
                         buttonText: "Scan now !",
                         imagePath: "images/Sun.png",
                         navigateToPage: RenewableEnergyEstimation(),
                       ),
-                      _infoCard(
-                        context,
-                        title: "Join the Green Movement",
-                        description: "Connect, Compete, and Create Change!",
-                        buttonText: "Join now !",
-                        imagePath: "images/Sun.png",
-                      ),
-                      _infoCard(
-                        context,
-                        title: "Test Your Eco IQ",
-                        description: "Play, Learn, and Grow Greener!",
-                        buttonText: "Play now !",
-                        imagePath: "images/Sun.png",
-                      ),
+                      SizedBox(height: screenHeight * 0.08), // Extra space to avoid content being hidden behind navbar
                     ],
                   ),
                 ),
@@ -834,7 +998,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 // "Let's go" button
                 ElevatedButton(
                   onPressed: () {
-                    // Handle button press
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const EnergyOnboardingPage()),
+                    );
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.white,
@@ -877,47 +1044,46 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Date selector - Clickable
-            GestureDetector(
-              onTap: _showCalendarDialog,
-              child: Row(
-                children: [
-                  Text(
-                    _formatDate(_selectedDate),
-                    style: TextStyle(
-                      fontSize: screenWidth * 0.04,
-                      fontFamily: 'WorkSansSB',
-                      color: Colors.black87,
-                    ),
+            // Date selector - Display only
+            Row(
+              children: [
+                Text(
+                  _formatDate(_selectedDate),
+                  style: TextStyle(
+                    fontSize: screenWidth * 0.04,
+                    fontFamily: 'WorkSansSB',
+                    color: Colors.black87,
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
 
-            // Custom Calendar matching design - Non-scrollable
+            // Custom Calendar - Scrollable (6 past days + today + 3 future days)
             Container(
               height: 75,
               padding: EdgeInsets.only(bottom: screenHeight * 0.005),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: List.generate(7, (index) {
-                  final date = DateTime.now().add(Duration(days: index - 3));
+              child: ListView.builder(
+                controller: _calendarScrollController,
+                scrollDirection: Axis.horizontal,
+                itemCount: 10, // 6 past + 1 today + 3 future
+                itemBuilder: (context, index) {
+                  final date = _todayDate.add(Duration(days: index - 6));
                   final isSelected = date.day == _selectedDate.day &&
                       date.month == _selectedDate.month &&
                       date.year == _selectedDate.year;
+                  final isToday = date.day == _todayDate.day &&
+                      date.month == _todayDate.month &&
+                      date.year == _todayDate.year;
 
                   return GestureDetector(
-                    onTap: () {
-                      if (!mounted) return;
-                      setState(() {
-                        _selectedDate = date;
-                      });
-                    },
+                    onTap: () => _onDateSelected(date),
                     child: Container(
+                      width: screenWidth * 0.12,
+                      margin: EdgeInsets.symmetric(horizontal: 1),
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          // Date number with white border for selected
+                          // Date number with white border for selected, green border for today
                           Container(
                             width: screenWidth * 0.115,
                             height: screenWidth * 0.115,
@@ -929,7 +1095,12 @@ class _HomeScreenState extends State<HomeScreen> {
                                       color: Colors.white,
                                       width: 3,
                                     )
-                                  : null,
+                                  : isToday
+                                      ? Border.all(
+                                          color: const Color(0xFF4CAF50),
+                                          width: 2,
+                                        )
+                                      : null,
                             ),
                             child: Center(
                               child: Text(
@@ -956,114 +1127,129 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
                   );
-                }),
+                },
               ),
             ),
 
-            // Main row with left content and Mascot
+            // Target and You Saved in Row
             Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                // Left side content
+                // Target box
                 Expanded(
-                  child: Column(
-                    children: [
-                      // Target and You Saved in one box
-                      Container(
-                        padding: EdgeInsets.all(screenWidth * 0.03),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFFCFCFC),
-                          borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    padding: EdgeInsets.all(screenWidth * 0.03),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFCFCFC),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Image.asset(
+                          'images/target.png',
+                          width: screenWidth * 0.08,
+                          height: screenWidth * 0.08,
+                          fit: BoxFit.contain,
                         ),
-                        child: Column(
+                        SizedBox(width: screenWidth * 0.015),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            // Target section
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Image.asset(
-                                  'images/target.png',
-                                  width: screenWidth * 0.1,
-                                  height: screenWidth * 0.1,
-                                  fit: BoxFit.contain,
-                                ),
-                                SizedBox(width: screenWidth * 0.025),
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.center,
-                                  children: [
-                                    Text(
-                                      'Target',
-                                      style: TextStyle(
-                                        fontSize: screenWidth * 0.035,
-                                        color: Colors.black87,
-                                        fontFamily: 'Worksans',
-                                      ),
-                                    ),
-                                    Text(
-                                      '20 kg CO₂eq',
-                                      style: TextStyle(
-                                        fontSize: screenWidth * 0.042,
-                                        fontWeight: FontWeight.bold,
-                                        color: Colors.black87,
-                                        fontFamily: 'WorkSansB',
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-
-                            // Divider
-                            Padding(
-                              padding: EdgeInsets.symmetric(vertical: screenHeight * 0.008),
-                              child: Divider(
-                                color: const Color(0xFFE0E0E0),
-                                thickness: 1,
+                            Text(
+                              'Target',
+                              style: TextStyle(
+                                fontSize: screenWidth * 0.03,
+                                color: Colors.black87,
+                                fontFamily: 'Worksans',
                               ),
                             ),
-
-                            // You Saved section
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Image.asset(
-                                  'images/save.png',
-                                  width: screenWidth * 0.1,
-                                  height: screenWidth * 0.1,
-                                  fit: BoxFit.contain,
-                                ),
-                                SizedBox(width: screenWidth * 0.025),
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.center,
-                                  children: [
-                                    Text(
-                                      'You Saved',
-                                      style: TextStyle(
-                                        fontSize: screenWidth * 0.035,
-                                        fontWeight: FontWeight.bold,
-                                        color: Colors.black87,
-                                        fontFamily: 'WorkSansB',
-                                      ),
-                                    ),
-                                    Text(
-                                      '10 kg CO₂eq',
-                                      style: TextStyle(
-                                        fontSize: screenWidth * 0.042,
-                                        fontWeight: FontWeight.bold,
-                                        color: const Color(0xFFFFA726),
-                                        fontFamily: 'WorkSansB',
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
+                            Text(
+                              '${_co2Target.toStringAsFixed(0)} kg CO₂eq',
+                              style: TextStyle(
+                                fontSize: screenWidth * 0.038,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.black87,
+                                fontFamily: 'WorkSansB',
+                              ),
                             ),
                           ],
                         ),
-                      ),
+                      ],
+                    ),
+                  ),
+                ),
 
-                      SizedBox(height: screenHeight * 0.01),
+                SizedBox(width: screenWidth * 0.02),
 
+                // You Saved box
+                Expanded(
+                  child: Container(
+                    padding: EdgeInsets.only(
+                      left: screenWidth * 0.01,
+                      top: screenWidth * 0.03,
+                      bottom: screenWidth * 0.03,
+                      right: screenWidth * 0.01, // Reduced right padding to prevent overflow
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFCFCFC),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Image.asset(
+                          'images/save.png',
+                          width: screenWidth * 0.08,
+                          height: screenWidth * 0.08,
+                          fit: BoxFit.contain,
+                        ),
+                        SizedBox(width: screenWidth * 0.015),
+                        Flexible(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'You Saved',
+                                style: TextStyle(
+                                  fontSize: screenWidth * 0.03,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.black87,
+                                  fontFamily: 'WorkSansB',
+                                ),
+                              ),
+                              Text(
+                                '${_selectedDateCO2Saved.toStringAsFixed(1)} kg CO₂eq',
+                                style: TextStyle(
+                                  fontSize: screenWidth * 0.038,
+                                  fontWeight: FontWeight.bold,
+                                  color: _selectedDateCO2Saved > 5 
+                                      ? const Color(0xFF4CAF50)  // Green for > 5
+                                      : _selectedDateCO2Saved >= 0 
+                                          ? const Color(0xFFF59E0B)  // Orange/amber for 0-5
+                                          : const Color(0xFFEF4444),  // Red for negative
+                                  fontFamily: 'WorkSansB',
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+
+            SizedBox(height: screenHeight * 0.01),
+
+            // Steps, Driven, and Mascot in Row
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                // Steps and Driven boxes column
+                Expanded(
+                  child: Column(
+                    children: [
                       // Steps box
                       Container(
                         width: double.infinity,
@@ -1075,21 +1261,72 @@ class _HomeScreenState extends State<HomeScreen> {
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
+                            Image.asset(
+                              'images/Steps.png',
+                              width: screenWidth * 0.08,
+                              height: screenWidth * 0.08,
+                              fit: BoxFit.contain,
+                            ),
+                            SizedBox(width: screenWidth * 0.015),
                             Text(
-                              'Steps 🚶',
+                              'Steps',
                               style: TextStyle(
                                 fontSize: screenWidth * 0.035,
+                                fontWeight: FontWeight.w500,
                                 color: Colors.black87,
                                 fontFamily: 'Worksans',
                               ),
                             ),
                             SizedBox(width: screenWidth * 0.02),
                             Text(
-                              '$_steps',
+                              '$_selectedDateSteps',
                               style: TextStyle(
                                 fontSize: screenWidth * 0.055,
-                                fontWeight: FontWeight.bold,
+                                fontWeight: FontWeight.w600,
                                 color: const Color(0xFF4CAF50),
+                                fontFamily: 'WorkSansB',
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      SizedBox(height: screenHeight * 0.01),
+
+                      // Driven Distance box
+                      Container(
+                        width: double.infinity,
+                        padding: EdgeInsets.all(screenWidth * 0.03),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFCFCFC),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Image.asset(
+                              'images/car.png',
+                              width: screenWidth * 0.08,
+                              height: screenWidth * 0.08,
+                              fit: BoxFit.contain,
+                            ),
+                            SizedBox(width: screenWidth * 0.015),
+                            Text(
+                              'Driven',
+                              style: TextStyle(
+                                fontSize: screenWidth * 0.035,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.black87,
+                                fontFamily: 'Worksans',
+                              ),
+                            ),
+                            SizedBox(width: screenWidth * 0.02),
+                            Text(
+                              '${_selectedDateDriven.toStringAsFixed(1)} km',
+                              style: TextStyle(
+                                fontSize: screenWidth * 0.055,
+                                fontWeight: FontWeight.w600,
+                                color: const Color(0xFFEF4444),
                                 fontFamily: 'WorkSansB',
                               ),
                             ),
@@ -1102,12 +1339,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
                 SizedBox(width: screenWidth * 0.02),
 
-                // Mascot on the right
+                // Mascot on the right (changes based on selected date's CO2)
                 Container(
                   width: screenWidth * 0.28,
                   height: screenWidth * 0.35,
                   child: Image.asset(
-                    'images/Mascot_good.png',
+                    _getMascotImage(_selectedDateCO2Saved),
                     fit: BoxFit.contain,
                     errorBuilder: (context, error, stackTrace) {
                       return Icon(
@@ -1123,15 +1360,15 @@ class _HomeScreenState extends State<HomeScreen> {
 
             SizedBox(height: screenHeight * 0.012),
 
-            // Bottom message - Centered
+            // Bottom message - Centered (dynamic based on CO2 saved)
             Center(
               child: Text(
-                'Great job! You\'re helping the planet\nwith your eco-friendly choices!',
+                _getBottomMessageText(_selectedDateCO2Saved),
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 16.32,
                   fontWeight: FontWeight.w600,
-                  color: const Color(0xFF14532B),
+                  color: _getBottomMessageColor(_selectedDateCO2Saved),
                   height: 1.2,
                   fontFamily: 'WorkSansSB',
                 ),
@@ -1272,5 +1509,462 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
     );
+  }
+
+  // ==========================================
+  // DRIVING DISTANCE TRACKING
+  // ==========================================
+
+  /// Initialize accelerometer to detect vehicle motion patterns
+  void _initAccelerometer() {
+    _accelerometerSubscription = accelerometerEventStream().listen((AccelerometerEvent event) {
+      // Calculate magnitude of acceleration (total vibration)
+      double magnitude = sqrt(event.x * event.x + event.y * event.y + event.z * event.z);
+      
+      // Remove gravity (9.8 m/s²) to get just the vibration component
+      double vibration = (magnitude - 9.8).abs();
+      
+      // Keep rolling window of recent readings
+      _recentAccelReadings.add(vibration);
+      if (_recentAccelReadings.length > _accelWindowSize) {
+        _recentAccelReadings.removeAt(0);
+      }
+      
+      // Calculate average vibration intensity
+      if (_recentAccelReadings.isNotEmpty) {
+        _vibrationIntensity = _recentAccelReadings.reduce((a, b) => a + b) / _recentAccelReadings.length;
+      }
+    });
+  }
+
+  /// Check if phone is likely in a moving vehicle based on vibration
+  bool _isLikelyInVehicle() {
+    // Vehicle produces consistent vibration (1.5-4 m/s²)
+    // Walking produces irregular, lower vibration
+    // Stationary produces minimal vibration (< 0.5 m/s²)
+    return _vibrationIntensity >= _vehicleVibrationThreshold && _vibrationIntensity < 6.0;
+  }
+
+  /// Load saved driving distance from SharedPreferences
+  Future<void> _loadDrivingDistance() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedDate = prefs.getString('lastDrivingDate');
+    final today = DateTime.now().toIso8601String().split('T')[0];
+
+    if (savedDate != today) {
+      // New day, reset distance
+      await prefs.setDouble('dailyDistance', 0.0);
+      await prefs.setString('lastDrivingDate', today);
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _distanceDriven = prefs.getDouble('dailyDistance') ?? 0.0;
+    });
+    _updateCO2Calculation();
+  }
+
+  /// Start background driving tracker
+  Future<void> _startDrivingTracker() async {
+    // Request location permission
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+
+    if (permission == LocationPermission.deniedForever) {
+      debugPrint('Location permission denied forever');
+      return;
+    }
+
+    if (permission == LocationPermission.denied) {
+      debugPrint('Location permission denied');
+      return;
+    }
+
+    // Start tracking every 30 seconds (longer interval reduces GPS drift)
+    _locationTimer = Timer.periodic(const Duration(seconds: 30), (timer) async {
+      await _trackDriving();
+    });
+
+    setState(() => _isTracking = true);
+  }
+
+  /// Track driving based on speed
+  Future<void> _trackDriving() async {
+    try {
+      Position currentPosition = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+
+      // Check GPS accuracy - ignore poor quality positions
+      if (currentPosition.accuracy > _minAccuracy) {
+        debugPrint('Poor GPS accuracy: ${currentPosition.accuracy.toStringAsFixed(1)}m - skipping');
+        return;
+      }
+
+      if (_lastPosition != null && _lastPositionTime != null) {
+        // Calculate distance between last and current position
+        double distanceInMeters = Geolocator.distanceBetween(
+          _lastPosition!.latitude,
+          _lastPosition!.longitude,
+          currentPosition.latitude,
+          currentPosition.longitude,
+        );
+
+        // Calculate time difference in seconds
+        final now = DateTime.now();
+        final timeDiff = now.difference(_lastPositionTime!).inSeconds;
+
+        // Calculate speed based on distance and time (more reliable than GPS speed)
+        double speed = 0.0;
+        if (timeDiff > 0) {
+          speed = (distanceInMeters / timeDiff) * 3.6; // Convert m/s to km/h
+        }
+
+        // Check if phone is in a vehicle (vibration pattern)
+        bool inVehicle = _isLikelyInVehicle();
+        
+        debugPrint('Distance: ${distanceInMeters.toStringAsFixed(1)}m, Time: ${timeDiff}s, Speed: ${speed.toStringAsFixed(1)} km/h, Accuracy: ${currentPosition.accuracy.toStringAsFixed(1)}m, Vibration: ${_vibrationIntensity.toStringAsFixed(2)} m/s², InVehicle: $inVehicle');
+
+        // Only count if:
+        // 1. Speed is above threshold (likely driving)
+        // 2. Distance is above minimum (filter GPS drift)
+        // 3. Speed is realistic (< 200 km/h to filter GPS jumps)
+        // 4. Accelerometer detects vehicle vibration pattern (optional but helps accuracy)
+        if (speed >= _drivingSpeedThreshold && 
+            speed < 200.0 && 
+            distanceInMeters >= _minDistanceThreshold &&
+            (inVehicle || speed >= 40.0)) { // Require vehicle vibration OR high speed (40+ km/h)
+          double distanceInKm = distanceInMeters / 1000;
+          
+          setState(() {
+            _distanceDriven += distanceInKm;
+          });
+
+          // Save to SharedPreferences
+          final prefs = await SharedPreferences.getInstance();
+          final today = DateTime.now().toIso8601String().split('T')[0];
+          await prefs.setDouble('dailyDistance', _distanceDriven);
+          
+          // Also save with date key for midnight sync
+          await prefs.setDouble('driven_km_$today', _distanceDriven);
+          
+          debugPrint('✅ Driving detected! Distance: ${distanceInKm.toStringAsFixed(3)} km, Speed: ${speed.toStringAsFixed(1)} km/h, Vibration: ${_vibrationIntensity.toStringAsFixed(2)} m/s², Total: ${_distanceDriven.toStringAsFixed(2)} km');
+        } else if (distanceInMeters < _minDistanceThreshold) {
+          debugPrint('⏸️ Distance too small (${distanceInMeters.toStringAsFixed(1)}m) - likely GPS drift');
+        }
+      }
+
+      _lastPosition = currentPosition;
+      _lastPositionTime = DateTime.now();
+    } catch (e) {
+      debugPrint('Error tracking driving: $e');
+    }
+  }
+
+  /// Reset driving distance at midnight (called by existing midnight timer)
+  Future<void> _resetDrivingDistance() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble('dailyDistance', 0.0);
+    await prefs.setString('lastDrivingDate', DateTime.now().toIso8601String().split('T')[0]);
+    
+    if (mounted) {
+      setState(() {
+        _distanceDriven = 0.0;
+      });
+      _updateCO2Calculation();
+    }
+  }
+
+  /// Request notification permission (required for Android 13+) and start background service
+  Future<void> _requestNotificationPermissionAndStartService() async {
+    // Request notification permission
+    final status = await Permission.notification.request();
+    
+    if (status.isGranted) {
+      debugPrint('✅ Notification permission granted - starting background service');
+      await _initializeBackgroundService();
+    } else if (status.isDenied) {
+      debugPrint('❌ Notification permission denied');
+      // Show dialog to user
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Notification Permission Required'),
+            content: const Text(
+              'Activity tracking requires notification permission to show your step count and driving distance in the background.'
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () async {
+                  Navigator.of(ctx).pop();
+                  await Permission.notification.request();
+                  if (await Permission.notification.isGranted) {
+                    await _initializeBackgroundService();
+                  }
+                },
+                child: const Text('Grant Permission'),
+              ),
+            ],
+          ),
+        );
+      }
+    } else if (status.isPermanentlyDenied) {
+      debugPrint('❌ Notification permission permanently denied');
+      // Guide user to settings
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Notification Permission Required'),
+            content: const Text(
+              'Please enable notification permission in app settings to use background activity tracking.'
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () async {
+                  Navigator.of(ctx).pop();
+                  await openAppSettings();
+                },
+                child: const Text('Open Settings'),
+              ),
+            ],
+          ),
+        );
+      }
+    }
+  }
+
+  // ==========================================
+  // BACKGROUND SERVICE FOR PERSISTENT TRACKING
+  // ==========================================
+
+  /// Initialize background service for continuous tracking
+  Future<void> _initializeBackgroundService() async {
+    final service = FlutterBackgroundService();
+    
+    // Configure notification channel for Android
+    const AndroidNotificationChannel channel = AndroidNotificationChannel(
+      'activity_tracker_channel',
+      'Activity Tracker',
+      description: 'Tracks your steps and driving in the background',
+      importance: Importance.low,
+    );
+
+    final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
+        FlutterLocalNotificationsPlugin();
+
+    await flutterLocalNotificationsPlugin
+        .resolvePlatformSpecificImplementation<
+            AndroidFlutterLocalNotificationsPlugin>()
+        ?.createNotificationChannel(channel);
+
+    // Configure and start background service
+    await service.configure(
+      iosConfiguration: IosConfiguration(
+        autoStart: true,
+        onForeground: onStart,
+        onBackground: onIosBackground,
+      ),
+      androidConfiguration: AndroidConfiguration(
+        onStart: onStart,
+        autoStart: true,
+        isForegroundMode: true,
+        notificationChannelId: 'activity_tracker_channel',
+        initialNotificationTitle: 'Activity Tracker',
+        initialNotificationContent: 'Tracking your steps and driving',
+        foregroundServiceNotificationId: 888,
+      ),
+    );
+
+    service.startService();
+  }
+
+  /// iOS background handler
+  @pragma('vm:entry-point')
+  static Future<bool> onIosBackground(ServiceInstance service) async {
+    return true;
+  }
+
+  /// Background service entry point
+  @pragma('vm:entry-point')
+  static void onStart(ServiceInstance service) async {
+    // Initialize dependencies
+    final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
+        FlutterLocalNotificationsPlugin();
+
+    // Initialize notification plugin for background service
+    const AndroidInitializationSettings initializationSettingsAndroid =
+        AndroidInitializationSettings('@mipmap/ic_launcher');
+    const InitializationSettings initializationSettings =
+        InitializationSettings(android: initializationSettingsAndroid);
+    await flutterLocalNotificationsPlugin.initialize(initializationSettings);
+
+    // Show initial notification
+    await flutterLocalNotificationsPlugin.show(
+      888,
+      'Activity Tracker',
+      'Starting activity tracking...',
+      const NotificationDetails(
+        android: AndroidNotificationDetails(
+          'activity_tracker_channel',
+          'Activity Tracker',
+          channelDescription: 'Tracks your steps and driving in the background',
+          importance: Importance.low,
+          priority: Priority.low,
+          ongoing: true,
+          autoCancel: false,
+          visibility: NotificationVisibility.secret, // Hide from lock screen
+        ),
+      ),
+    );
+
+    Position? lastPosition;
+    int totalSteps = 0;
+    int? baselineSteps;
+
+    // Listen to step counter
+    StreamSubscription<StepCount>? stepSubscription;
+    
+    try {
+      stepSubscription = Pedometer.stepCountStream.listen((StepCount event) async {
+        final prefs = await SharedPreferences.getInstance();
+        final today = DateTime.now().toIso8601String().split('T')[0];
+        final savedDate = prefs.getString('lastStepDate');
+
+        if (savedDate != today) {
+          // New day, reset
+          await prefs.setInt('dailySteps', 0);
+          await prefs.setInt('baselineSteps', event.steps);
+          await prefs.setString('lastStepDate', today);
+          baselineSteps = event.steps;
+          totalSteps = 0;
+        } else {
+          baselineSteps ??= prefs.getInt('baselineSteps') ?? event.steps;
+          totalSteps = event.steps - baselineSteps!;
+          if (totalSteps < 0) totalSteps = 0;
+          await prefs.setInt('dailySteps', totalSteps);
+        }
+
+        // Update notification with current steps
+        final distance = prefs.getDouble('dailyDistance') ?? 0.0;
+        await flutterLocalNotificationsPlugin.show(
+          888,
+          'Activity Tracker',
+          'Steps: $totalSteps | Driven: ${distance.toStringAsFixed(2)} km',
+          const NotificationDetails(
+            android: AndroidNotificationDetails(
+              'activity_tracker_channel',
+              'Activity Tracker',
+              channelDescription: 'Tracks your steps and driving in the background',
+              importance: Importance.low,
+              priority: Priority.low,
+              ongoing: true,
+              autoCancel: false,
+              visibility: NotificationVisibility.secret, // Hide from lock screen
+            ),
+          ),
+        );
+      });
+    } catch (e) {
+      print('Error in background step tracking: $e');
+    }
+
+    DateTime? lastPositionTime;
+
+    // Track driving every 30 seconds (longer interval reduces GPS drift)
+    Timer.periodic(const Duration(seconds: 30), (timer) async {
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final today = DateTime.now().toIso8601String().split('T')[0];
+        final savedDate = prefs.getString('lastDrivingDate');
+
+        if (savedDate != today) {
+          // New day, reset distance
+          await prefs.setDouble('dailyDistance', 0.0);
+          await prefs.setString('lastDrivingDate', today);
+          lastPosition = null;
+          lastPositionTime = null;
+        }
+
+        Position currentPosition = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.high,
+        );
+
+        // Check GPS accuracy - ignore poor quality positions
+        if (currentPosition.accuracy > 50.0) {
+          print('Poor GPS accuracy: ${currentPosition.accuracy.toStringAsFixed(1)}m - skipping');
+          return;
+        }
+
+        if (lastPosition != null && lastPositionTime != null) {
+          double distanceInMeters = Geolocator.distanceBetween(
+            lastPosition!.latitude,
+            lastPosition!.longitude,
+            currentPosition.latitude,
+            currentPosition.longitude,
+          );
+
+          // Calculate time difference and speed
+          final now = DateTime.now();
+          final timeDiff = now.difference(lastPositionTime!).inSeconds;
+          double speed = 0.0;
+          if (timeDiff > 0) {
+            speed = (distanceInMeters / timeDiff) * 3.6; // m/s to km/h
+          }
+
+          // Only count if driving (speed >= 20 km/h, distance >= 20m, speed < 200 km/h)
+          if (speed >= 20.0 && speed < 200.0 && distanceInMeters >= 20.0) {
+            double distanceInKm = distanceInMeters / 1000;
+            double currentDistance = prefs.getDouble('dailyDistance') ?? 0.0;
+            double newDistance = currentDistance + distanceInKm;
+            await prefs.setDouble('dailyDistance', newDistance);
+
+            // Update notification
+            final steps = prefs.getInt('dailySteps') ?? 0;
+            await flutterLocalNotificationsPlugin.show(
+              888,
+              'Activity Tracker',
+              'Steps: $steps | Driven: ${newDistance.toStringAsFixed(2)} km',
+              const NotificationDetails(
+                android: AndroidNotificationDetails(
+                  'activity_tracker_channel',
+                  'Activity Tracker',
+                  channelDescription: 'Tracks your steps and driving in the background',
+                  importance: Importance.low,
+                  priority: Priority.low,
+                  ongoing: true,
+                  autoCancel: false,
+                  visibility: NotificationVisibility.secret, // Hide from lock screen
+                ),
+              ),
+            );
+            
+            print('Driving: ${distanceInKm.toStringAsFixed(3)} km at ${speed.toStringAsFixed(1)} km/h, Total: ${newDistance.toStringAsFixed(2)} km');
+          }
+        }
+
+        lastPosition = currentPosition;
+        lastPositionTime = DateTime.now();
+      } catch (e) {
+        print('Error in background driving tracking: $e');
+      }
+    });
+
+    // Listen for service stop
+    service.on('stopService').listen((event) {
+      stepSubscription?.cancel();
+      service.stopSelf();
+    });
   }
 }

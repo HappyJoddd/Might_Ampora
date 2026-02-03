@@ -64,14 +64,18 @@ class GoogleAuthService {
         refreshToken: data['refreshToken'],
       );
 
-      // 🔹 Save name & email
+      // 🔹 Save user details including userId
       await AuthStorage.saveUserDetails(
+        userId: data['user']['id'],
         name: data['user']['name'],
         email: data['user']['email'],
+        phone: data['user']['phone'] ?? '',
       );
 
       await AuthStorage.setLoggedIn(true);
-      print("Google Sign-In successful! Tokens and user data saved.");
+      await AuthStorage.setHasRegistered(true);
+      print("✅ Google Sign-In successful! Tokens and user data saved.");
+      print('📱 User providers: ${data['user']['providers']}');
       return true;
     } catch (e) {
       print("Google Sign-In error: $e");

@@ -7,6 +7,7 @@ class AuthStorage {
   static const _keyAccessToken = 'accessToken';
   static const _keyRefreshToken = 'refreshToken';
   static const _keyIsLoggedIn = 'isLoggedIn';
+  static const _keyUserId = 'userId'; // User MongoDB ID
   static const _keyUserName = 'userName';
   static const _keyUserEmail = 'userEmail';
   static const _keyUserPhone = 'userPhone';
@@ -75,6 +76,7 @@ class AuthStorage {
   // ==============================================================
 
 static Future<void> saveUserDetails({
+  String? userId,
   String? name,
   String? email,
   String? phone,
@@ -82,6 +84,10 @@ static Future<void> saveUserDetails({
 }) async {
   bool hasAnyDetail = false;
 
+  if (userId != null && userId.isNotEmpty) {
+    await _storage.write(key: _keyUserId, value: userId);
+    hasAnyDetail = true;
+  }
   if (name != null && name.isNotEmpty) {
     await _storage.write(key: _keyUserName, value: name);
     hasAnyDetail = true;
@@ -106,11 +112,13 @@ static Future<void> saveUserDetails({
 }
 
   static Future<Map<String, String?>> getUserDetails() async {
+    final userId = await _storage.read(key: _keyUserId);
     final name = await _storage.read(key: _keyUserName);
     final email = await _storage.read(key: _keyUserEmail);
     final phone = await _storage.read(key: _keyUserPhone);
     final location = await _storage.read(key: _keyUserLocation);
     return {
+      'userId': userId,
       'name': name,
       'email': email,
       'phone': phone,

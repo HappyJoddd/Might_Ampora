@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:get/get.dart';
 import 'package:might_ampora/Pages/Components/LiquidNavbar.dart';
-import 'package:might_ampora/Pages/Home/HomeScreen.dart';
 import 'package:might_ampora/services/api_service.dart';
 import 'package:might_ampora/services/auth_storage.dart';
+import 'package:might_ampora/services/activity_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'HomeScreen.dart';
 import 'package:might_ampora/Routes/routes_name.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -19,11 +20,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
   String _userName = 'User';
   String _userEmail = '';
   String _userInitials = 'U';
+  
+  // Monthly summary data
+  int _monthlySteps = 0;
+  double _monthlyDrivenKm = 0.0;
+  double _monthlySavedCO2 = 0.0;
+  bool _isLoadingMonthlySummary = true;
 
   @override
   void initState() {
     super.initState();
     _loadUserData();
+    _loadMonthlySummary();
   }
 
   /// Load user's data from storage
@@ -55,28 +63,128 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  /// Load monthly summary from backend
+  Future<void> _loadMonthlySummary() async {
+    try {
+      final userDetails = await AuthStorage.getUserDetails();
+      final userId = userDetails['userId'];
+      
+      if (userId != null && userId.isNotEmpty) {
+        final summary = await ActivityService.getCurrentMonthlySummary(userId);
+        
+        if (summary != null && mounted) {
+          setState(() {
+            _monthlySteps = summary['totalSteps'] ?? 0;
+            _monthlyDrivenKm = (summary['totalDrivenKm'] ?? 0).toDouble();
+            _monthlySavedCO2 = (summary['totalSavedCO2'] ?? 0).toDouble();
+            _isLoadingMonthlySummary = false;
+          });
+          print('✅ Monthly summary loaded: steps=$_monthlySteps, driven=${_monthlyDrivenKm}km, CO2=${_monthlySavedCO2}kg');
+        } else if (mounted) {
+          setState(() {
+            _isLoadingMonthlySummary = false;
+          });
+        }
+      }
+    } catch (e) {
+      print('Error loading monthly summary: $e');
+      if (mounted) {
+        setState(() {
+          _isLoadingMonthlySummary = false;
+        });
+      }
+    }
+  }
+
 Future<void> _handleLogout() async {
   try {
+    // 🔄 First, sync today's data to backend before logout
+    print('💾 Syncing today\'s data before logout...');
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final userDetails = await AuthStorage.getUserDetails();
+      final userId = userDetails['userId'];
+      
+      if (userId != null && userId.isNotEmpty) {
+        final today = DateTime.now();
+        final dateStr = '${today.year}-${today.month.toString().padLeft(2, '0')}-${today.day.toString().padLeft(2, '0')}';
+        
+        // Get today's data
+        final steps = prefs.getInt('steps_$dateStr') ?? prefs.getInt('dailySteps') ?? 0;
+        final drivenKm = prefs.getDouble('driven_km_$dateStr') ?? prefs.getDouble('dailyDistance') ?? 0.0;
+        
+        // Calculate CO2
+        final co2SavedByWalking = (steps / 1000) * 0.75 * 0.12;
+        final co2EmittedByDriving = drivenKm * 0.12;
+        final savedCO2 = co2SavedByWalking - co2EmittedByDriving;
+        
+        // Save daily activity
+        await ActivityService.saveDailyActivity(
+          userId: userId,
+          steps: steps,
+          drivenKm: drivenKm,
+          savedCO2: savedCO2,
+          date: dateStr,
+        );
+        
+        // Update monthly summary with date for idempotency
+        // This prevents double-counting if midnight sync also runs
+        final monthStr = '${today.year}-${today.month.toString().padLeft(2, '0')}';
+        await ActivityService.updateMonthlySummary(
+          userId: userId,
+          month: monthStr,
+          steps: steps,
+          drivenKm: drivenKm,
+          savedCO2: savedCO2,
+          date: dateStr, // Idempotent - won't double-count if called twice
+        );
+        
+        print('✅ Today\'s data synced before logout');
+      }
+    } catch (e) {
+      print('⚠️ Failed to sync data before logout: $e');
+      // Continue with logout even if sync fails
+    }
+    
     // Retrieve refresh token before clearing
     final refreshToken = await AuthStorage.getRefreshToken();
 
-    // 🔹 Call backend logout endpoint
-    await ApiService.logout(refreshToken);
+    // 🔹 Call backend logout endpoint (optional - continue even if it fails)
+    try {
+      await ApiService.logout(refreshToken);
+    } catch (e) {
+      // Backend logout failed, but continue with local logout
+      print('Backend logout failed: $e');
+    }
 
-    // 🔸 Locally clear auth tokens but keep hasRegistered = true
+    // 🔸 Clear ALL auth data locally
     await AuthStorage.logout();
 
     if (!mounted) return;
+    
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text("👋 Logged out successfully.")),
     );
 
-    // 🔁 Navigate to login & clear navigation stack using GetX
-    Get.offAllNamed(RouteName.login);
+    // 🔁 Force navigate to login page and clear all routes
+    Navigator.of(context).pushNamedAndRemoveUntil(
+      RouteName.login,
+      (route) => false,
+    );
   } catch (e) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text("🚨 Logout failed: $e")));
+    if (!mounted) return;
+    
+    // Even if something fails, try to clear local data and go to login
+    await AuthStorage.logout();
+    
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text("⚠️ Logout completed with errors: $e")),
+    );
+    
+    Navigator.of(context).pushNamedAndRemoveUntil(
+      RouteName.login,
+      (route) => false,
+    );
   }
 }
 
@@ -111,32 +219,58 @@ Future<void> _handleLogout() async {
                         ],
                       ),
                     ),
-                    child: SafeArea(
-                      bottom: false,
-                      child: Padding(
-                        padding: EdgeInsets.all(screenWidth * 0.04),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // Title
-                            Text(
-                              'Profile',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: screenWidth * 0.08,
-                                fontWeight: FontWeight.bold,
-                                fontFamily: 'WorkSansB',
-                              ),
+                    child: Stack(
+                      children: [
+                        // Tree illustration in bottom right corner - under the profile card
+                        Positioned(
+                          right: 0,
+                          bottom: 0,
+                          child: SizedBox(
+                            width: screenWidth * 0.6,
+                            height: screenHeight * 0.25,
+                            child: Image.asset(
+                              'images/OBJECTS.png',
+                              fit: BoxFit.fitWidth,
+                              alignment: Alignment.bottomRight,
+                              errorBuilder: (context, error, stackTrace) {
+                                // Fallback if image not found
+                                return const Icon(
+                                  Icons.nature,
+                                  size: 80,
+                                  color: Colors.white24,
+                                );
+                              },
                             ),
-                            SizedBox(height: screenHeight * 0.02),
-                            // Profile Card
-                            Container(
-                              padding: EdgeInsets.all(screenWidth * 0.04),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                              child: Row(
+                          ),
+                        ),
+                        
+                        // Main header content
+                        SafeArea(
+                          bottom: false,
+                          child: Padding(
+                            padding: EdgeInsets.all(screenWidth * 0.04),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                // Title
+                                Text(
+                                  'Profile',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: screenWidth * 0.08,
+                                    fontWeight: FontWeight.bold,
+                                    fontFamily: 'WorkSansB',
+                                  ),
+                                ),
+                                SizedBox(height: screenHeight * 0.02),
+                                // Profile Card
+                                Container(
+                                  padding: EdgeInsets.all(screenWidth * 0.04),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                  child: Row(
                                 children: [
                                   // Avatar
                                   Container(
@@ -185,45 +319,18 @@ Future<void> _handleLogout() async {
                                             ),
                                           ),
                                         SizedBox(height: screenHeight * 0.01),
-                                        Text(
-                                          'Green Beginner',
-                                          style: TextStyle(
-                                            fontSize: screenWidth * 0.035,
-                                            color: const Color(0xFF4CAF50),
-                                            fontWeight: FontWeight.w600,
-                                            fontFamily: 'WorkSansSB',
-                                          ),
-                                        ),
                                       ],
                                     ),
                                   ),
                                   // Badge icon
-                                  Image.asset(
-                                    'images/Logo.png',
-                                    width: screenWidth * 0.15,
-                                    height: screenWidth * 0.15,
-                                    errorBuilder: (context, error, stackTrace) {
-                                      return Container(
-                                        width: screenWidth * 0.15,
-                                        height: screenWidth * 0.15,
-                                        decoration: BoxDecoration(
-                                          color: Colors.green[100],
-                                          shape: BoxShape.circle,
-                                        ),
-                                        child: Icon(
-                                          Icons.eco,
-                                          color: Colors.green,
-                                          size: screenWidth * 0.08,
-                                        ),
-                                      );
-                                    },
-                                  ),
                                 ],
                               ),
                             ),
                           ],
                         ),
                       ),
+                    ),
+                    ],
                     ),
                   ),
 
@@ -233,6 +340,7 @@ Future<void> _handleLogout() async {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        // Title aligned to left
                         Text(
                           'My Energy Summary',
                           style: TextStyle(
@@ -244,54 +352,64 @@ Future<void> _handleLogout() async {
                         ),
                         SizedBox(height: screenHeight * 0.02),
 
-                        // Stats grid
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _buildStatCard(
-                                screenWidth,
-                                screenHeight,
-                                '10 kg CO₂eq',
-                                'Energy Saved',
-                                'This Month',
-                                Colors.orange,
+                        // Stats grid - First row: Energy Saved (full width)
+                        _isLoadingMonthlySummary
+                            ? Container(
+                                width: double.infinity,
+                                padding: EdgeInsets.all(screenWidth * 0.04),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(12),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.grey.withOpacity(0.1),
+                                      blurRadius: 10,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ],
+                                ),
+                                child: Center(
+                                  child: CircularProgressIndicator(
+                                    color: Color(0xFF4CAF50),
+                                  ),
+                                ),
+                              )
+                            : Container(
+                                width: double.infinity,
+                                child: _buildEnergySavedCard(
+                                  screenWidth,
+                                  screenHeight,
+                                  '${_monthlySavedCO2.toStringAsFixed(1)} kg CO₂eq',
+                                  'Energy Saved',
+                                  'This Month',
+                                  _monthlySavedCO2 > 5 ? Colors.green : (_monthlySavedCO2 > 0 ? Colors.orange : Colors.red),
+                                ),
                               ),
-                            ),
-                            SizedBox(width: screenWidth * 0.03),
-                            Expanded(
-                              child: _buildStatCard(
-                                screenWidth,
-                                screenHeight,
-                                '102',
-                                'Steps 🚶',
-                                'This Month',
-                                Colors.green,
-                              ),
-                            ),
-                          ],
-                        ),
                         SizedBox(height: screenHeight * 0.02),
+                        // Second row: Steps and Driven kms with icons
                         Row(
                           children: [
                             Expanded(
-                              child: _buildStatCard(
+                              child: _buildStatCardWithIcon(
                                 screenWidth,
                                 screenHeight,
-                                '10 kms',
-                                'Cycling 🚴',
+                                _monthlySteps.toString(),
+                                'Steps',
                                 'This Month',
                                 Colors.green,
+                                'images/Steps.png',
                               ),
                             ),
                             SizedBox(width: screenWidth * 0.03),
                             Expanded(
-                              child: _buildStatCard(
+                              child: _buildStatCardWithIcon(
                                 screenWidth,
                                 screenHeight,
-                                '5 kms',
-                                'Driven 🚗',
+                                '${_monthlyDrivenKm.toStringAsFixed(1)} km',
+                                'Driven',
                                 'This Month',
                                 Colors.red,
+                                'images/car.png',
                               ),
                             ),
                           ],
@@ -311,24 +429,12 @@ Future<void> _handleLogout() async {
                         ),
                         SizedBox(height: screenHeight * 0.02),
 
-                        // Edit login info
-                        _buildSettingItem(
-                          screenWidth,
-                          'Log-out',
-                          Icons.arrow_forward_ios,
-                          _handleLogout,
-                        ),
-
-                        SizedBox(height: screenHeight * 0.015),
-
                         // Log-out
                         _buildSettingItem(
                           screenWidth,
                           'Log-out',
                           Icons.arrow_forward_ios,
-                          () {
-                            // Handle logout
-                          },
+                          _handleLogout,
                         ),
 
                         // Add bottom padding for navbar
@@ -348,8 +454,17 @@ Future<void> _handleLogout() async {
               child: LiquidNavbar(
                 currentIndex: _currentIndex,
                 onItemSelected: (index) {
-                  // LiquidNavbar handles navigation internally, just update the index
-                  setState(() => _currentIndex = index);
+                  if (index == 0) {
+                    Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(builder: (context) => const HomeScreen()),
+                    );
+                  } else if (index == 2) {
+                    // Already on profile page
+                    setState(() => _currentIndex = index);
+                  } else {
+                    setState(() => _currentIndex = index);
+                  }
                 },
               ),
             ),
@@ -359,7 +474,7 @@ Future<void> _handleLogout() async {
     );
   }
 
-  Widget _buildStatCard(
+  Widget _buildEnergySavedCard(
     double screenWidth,
     double screenHeight,
     String value,
@@ -381,12 +496,12 @@ Future<void> _handleLogout() async {
         ],
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Text(
             value,
             style: TextStyle(
-              fontSize: screenWidth * 0.05,
+              fontSize: screenWidth * 0.06,
               fontWeight: FontWeight.bold,
               color: color,
               fontFamily: 'WorkSansB',
@@ -396,13 +511,87 @@ Future<void> _handleLogout() async {
           Text(
             label,
             style: TextStyle(
-              fontSize: screenWidth * 0.035,
+              fontSize: screenWidth * 0.04,
               fontWeight: FontWeight.w600,
               color: Colors.black87,
               fontFamily: 'WorkSansSB',
             ),
           ),
           SizedBox(height: screenHeight * 0.003),
+          Text(
+            period,
+            style: TextStyle(
+              fontSize: screenWidth * 0.03,
+              color: Colors.grey[600],
+              fontFamily: 'Worksans',
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatCardWithIcon(
+    double screenWidth,
+    double screenHeight,
+    String value,
+    String label,
+    String period,
+    Color color,
+    String iconPath,
+  ) {
+    return Container(
+      padding: EdgeInsets.all(screenWidth * 0.04),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.1),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          // Value first (centered)
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: screenWidth * 0.05,
+              fontWeight: FontWeight.bold,
+              color: color,
+              fontFamily: 'WorkSansB',
+            ),
+          ),
+          SizedBox(height: screenHeight * 0.01),
+          // Label with icon in a row (centered)
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: screenWidth * 0.035,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.black87,
+                  fontFamily: 'WorkSansSB',
+                ),
+              ),
+              SizedBox(width: screenWidth * 0.02),
+              Image.asset(
+                iconPath,
+                width: screenWidth * 0.06,
+                height: screenWidth * 0.06,
+                fit: BoxFit.contain,
+              ),
+            ],
+          ),
+          SizedBox(height: screenHeight * 0.005),
+          // Period last (centered)
           Text(
             period,
             style: TextStyle(
