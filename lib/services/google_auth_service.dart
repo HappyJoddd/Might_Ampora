@@ -1,61 +1,50 @@
-import 'dart:convert';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-import 'package:http/http.dart' as http;
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'api_service.dart';
 import 'auth_storage.dart';
 
 class GoogleAuthService {
   static final GoogleSignIn _googleSignIn = GoogleSignIn(
     scopes: ['email', 'profile'],
+    serverClientId: dotenv.env['WEB_CLIENT_ID'],
   );
 
-  static Future<bool> signIn() async {
+  static Future<Map<String, dynamic>> signIn() async {
     try {
       // Sign out first to ensure clean state
       await _googleSignIn.signOut();
       
       final googleUser = await _googleSignIn.signIn();
       if (googleUser == null) {
-        print("Google Sign-In cancelled by user");
-        return false;
+        return {'success': false, 'error': 'Google sign-in was cancelled'};
       }
 
       final googleAuth = await googleUser.authentication;
       final idToken = googleAuth.idToken;
       
       if (idToken == null) {
-        print("Failed to get ID token");
-        return false;
+        return {'success': false, 'error': 'Failed to get Google ID token'};
       }
 
-      print("ID Token obtained, calling backend...");
       final response = await ApiService.signInWithGoogle(idToken);
-
-      print("Backend response: $response");
       
       if (response['success'] != true) {
-        print("Backend error: ${response['error']}");
-        return false;
+        return {'success': false, 'error': response['error'] ?? 'Failed to authenticate with server'};
       }
 
       final data = response['data'];
-      print("Data from backend: $data");
 
       // Check if data contains the required fields
       if (data == null) {
-        print("Error: No data in response");
-        return false;
+        return {'success': false, 'error': 'Invalid server response'};
       }
 
       if (data['accessToken'] == null || data['refreshToken'] == null) {
-        print("Error: Missing tokens in response. AccessToken: ${data['accessToken']}, RefreshToken: ${data['refreshToken']}");
-        return false;
+        return {'success': false, 'error': 'Missing authentication tokens'};
       }
 
       if (data['user'] == null) {
-        print("Error: No user data in response");
-        return false;
+        return {'success': false, 'error': 'Missing user data'};
       }
 
       // 🔹 Save tokens
@@ -74,12 +63,10 @@ class GoogleAuthService {
 
       await AuthStorage.setLoggedIn(true);
       await AuthStorage.setHasRegistered(true);
-      print("✅ Google Sign-In successful! Tokens and user data saved.");
-      print('📱 User providers: ${data['user']['providers']}');
-      return true;
+      
+      return {'success': true};
     } catch (e) {
-      print("Google Sign-In error: $e");
-      return false;
+      return {'success': false, 'error': 'Google sign-in error: ${e.toString()}'};
     }
   }
 

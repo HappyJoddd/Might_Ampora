@@ -3,15 +3,16 @@ import 'package:flutter/services.dart';
 import 'package:might_ampora/Pages/Solar/SolarEngery.dart';
 import 'package:pedometer/pedometer.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:table_calendar/table_calendar.dart';
 import 'package:geolocator/geolocator.dart';
+import 'dart:io' show Platform;
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter_background_service/flutter_background_service.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
+import 'dart:ui'; // Add this if not present
+import 'package:flutter_background_service/flutter_background_service.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:http/http.dart' as http;
 import '../Components/LiquidNavbar.dart';
 import 'Profilepage.dart';
@@ -35,7 +36,6 @@ class _HomeScreenState extends State<HomeScreen> {
   // Normalize to date only (remove time component)
   DateTime get _todayDate => DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
   late DateTime _selectedDate;
-  DateTime _focusedDay = DateTime.now();
   
   // Selected date activity data
   int _selectedDateSteps = 0;
@@ -47,33 +47,16 @@ class _HomeScreenState extends State<HomeScreen> {
   static const double _co2Target = 10.0; // Daily CO2 target in kg
   double _currentCO2Saved = 0.0; // Real-time calculated CO2 saved for today
   Timer? _co2UpdateTimer;
-  String _mascotImage = 'images/Mascot_good.png'; // Current mascot image
   
   int _aqiValue = 86; // Default AQI value (int for UI)
-  String? _location;
   String _userName = 'User'; // User's first name
   String _cityName = 'Your City'; // User's current city
   String _userInitials = 'U'; // User's initials (first + last)
-  
   // Driving tracking variables
   double _distanceDriven = 0.0; // in kilometers
-  Position? _lastPosition;
-  Timer? _locationTimer;
-  bool _isTracking = false;
   
   // Calendar scroll controller
   final ScrollController _calendarScrollController = ScrollController();
-  DateTime? _lastPositionTime;
-  static const double _drivingSpeedThreshold = 20.0; // 20 km/h
-  static const double _minAccuracy = 50.0; // meters - ignore positions with accuracy worse than this
-  static const double _minDistanceThreshold = 20.0; // meters - minimum distance to count
-  
-  // Accelerometer tracking for vehicle detection
-  StreamSubscription<AccelerometerEvent>? _accelerometerSubscription;
-  double _vibrationIntensity = 0.0;
-  List<double> _recentAccelReadings = [];
-  static const int _accelWindowSize = 10; // Keep last 10 readings
-  static const double _vehicleVibrationThreshold = 1.5; // m/s² - typical vehicle vibration
 
   @override
   void initState() {
@@ -85,9 +68,8 @@ class _HomeScreenState extends State<HomeScreen> {
     _requestLocationPermissionAndFetch();
     MidnightSyncService().initialize(); // Singleton - only creates one timer
     _loadDrivingDistance();
-    _initAccelerometer();
-    _startDrivingTracker();
-    _requestNotificationPermissionAndStartService();
+    _initializeAndStartBackgroundService();
+    _listenToBackgroundService();
     _fetchActivityForDate(_selectedDate);
     _startCO2UpdateTimer();
     
@@ -110,8 +92,6 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     _stepCountStream?.cancel();
-    _locationTimer?.cancel();
-    _accelerometerSubscription?.cancel();
     _co2UpdateTimer?.cancel();
     _calendarScrollController.dispose();
     super.dispose();
@@ -131,10 +111,8 @@ class _HomeScreenState extends State<HomeScreen> {
           date.day == _todayDate.day;
       
       final dateKey = '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
-      print('📅 Fetching activity for date: $dateKey (isToday: $isToday)');
       
       if (isToday) {
-        print('✅ Using today\'s live data: steps=$_steps, driven=${_distanceDriven.toStringAsFixed(2)}km, CO2=${_currentCO2Saved.toStringAsFixed(2)}kg');
         setState(() {
           _selectedDateSteps = _steps;
           _selectedDateDriven = _distanceDriven;
@@ -146,7 +124,6 @@ class _HomeScreenState extends State<HomeScreen> {
       // Check cache first
       if (_activityDataCache.containsKey(dateKey)) {
         final cached = _activityDataCache[dateKey]!;
-        print('✅ Using cached data for $dateKey: steps=${cached['steps']}, driven=${cached['drivenKm']}km');
         setState(() {
           _selectedDateSteps = cached['steps'] ?? 0;
           _selectedDateDriven = cached['drivenKm'] ?? 0.0;
@@ -156,14 +133,11 @@ class _HomeScreenState extends State<HomeScreen> {
       }
       
       // Fetch from backend
-      print('🔄 Fetching from backend for $dateKey...');
       final weekData = await ActivityService.getPastWeekActivity(userId);
-      print('📦 Backend returned ${weekData.length} activities');
       
       // Update cache
       for (var activity in weekData) {
         final activityDate = activity['date'];
-        print('  - Activity date: $activityDate, steps: ${activity['steps']}, driven: ${activity['drivenKm']}km');
         _activityDataCache[activityDate] = {
           'steps': (activity['steps'] ?? 0) is int ? activity['steps'] : (activity['steps'] ?? 0).toInt(),
           'drivenKm': (activity['drivenKm'] ?? 0).toDouble(),
@@ -174,7 +148,6 @@ class _HomeScreenState extends State<HomeScreen> {
       // Update UI with selected date data
       if (_activityDataCache.containsKey(dateKey)) {
         final data = _activityDataCache[dateKey]!;
-        print('✅ Found data for $dateKey: steps=${data['steps']}, driven=${data['drivenKm']}km');
         setState(() {
           _selectedDateSteps = data['steps'] ?? 0;
           _selectedDateDriven = data['drivenKm'] ?? 0.0;
@@ -182,7 +155,6 @@ class _HomeScreenState extends State<HomeScreen> {
         });
       } else {
         // No data for this date
-        print('⚠️ No data found for $dateKey');
         setState(() {
           _selectedDateSteps = 0;
           _selectedDateDriven = 0.0;
@@ -190,7 +162,6 @@ class _HomeScreenState extends State<HomeScreen> {
         });
       }
     } catch (e) {
-      print('❌ Error fetching activity for date: $e');
       setState(() {
         _selectedDateSteps = 0;
         _selectedDateDriven = 0.0;
@@ -226,25 +197,14 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
   
-  /// Update CO2 calculation and mascot based on current steps and driven distance
+  /// Update CO2 calculation based on current steps and driven distance
   void _updateCO2Calculation() {
     if (!mounted) return;
     
     final co2Saved = _calculateCO2Saved(_steps, _distanceDriven);
-    String mascot;
-    
-    // Select mascot based on CO2 saved
-    if (co2Saved > 5.0) {
-      mascot = 'images/Mascot_good.png';
-    } else if (co2Saved >= 0.0) {
-      mascot = 'images/Mascot_mid.png';
-    } else {
-      mascot = 'images/Mascot_bad.png';
-    }
     
     setState(() {
       _currentCO2Saved = co2Saved;
-      _mascotImage = mascot;
       
       // If today is selected, update the displayed values
       final isToday = _selectedDate.year == _todayDate.year &&
@@ -284,7 +244,7 @@ class _HomeScreenState extends State<HomeScreen> {
         });
       }
     } catch (e) {
-      print('Error loading user data: $e');
+      // Silent error handling
     }
   }
 
@@ -325,22 +285,7 @@ class _HomeScreenState extends State<HomeScreen> {
           cancelOnError: false,
         );
       } catch (e) {
-        debugPrint('Error initializing pedometer: $e');
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Error starting step counter: $e')),
-          );
-        }
-      }
-    } else {
-      debugPrint('Activity recognition permission denied');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Please grant activity recognition permission to track steps'),
-            duration: Duration(seconds: 5),
-          ),
-        );
+        // Silent error handling
       }
     }
   }
@@ -353,11 +298,9 @@ class _HomeScreenState extends State<HomeScreen> {
     final today = DateTime.now().toIso8601String().split('T')[0];
     final savedDate = prefs.getString('lastStepDate');
     
-    debugPrint('Step event received: ${event.steps} steps since reboot at ${event.timeStamp}');
 
     // Check if it's a new day
     if (savedDate != today) {
-      debugPrint('New day detected! Resetting daily steps.');
       await prefs.setInt('dailySteps', 0);
       await prefs.setString('lastStepDate', today);
       await prefs.setInt('baselineSteps', event.steps);
@@ -376,7 +319,6 @@ class _HomeScreenState extends State<HomeScreen> {
     if (!prefs.containsKey('baselineSteps')) {
       await prefs.setInt('baselineSteps', event.steps);
       baseline = event.steps;
-      debugPrint('Baseline set to: $baseline (first run today)');
     }
     
     // Calculate today's steps: current steps since reboot - baseline
@@ -386,13 +328,11 @@ class _HomeScreenState extends State<HomeScreen> {
     // Handle device reboot: if current steps < baseline, device was rebooted
     // In this case, current steps ARE the new steps added after reboot
     if (event.steps < baseline) {
-      debugPrint('Device reboot detected! Previous baseline: $baseline, Current: ${event.steps}');
       // Add current steps to existing daily total (before reboot)
       final previousDailySteps = prefs.getInt('dailySteps') ?? 0;
       dailySteps = previousDailySteps + event.steps;
       // Update baseline to 0 since device just rebooted
       await prefs.setInt('baselineSteps', 0);
-      debugPrint('After reboot calculation: Previous daily: $previousDailySteps + New steps: ${event.steps} = Total: $dailySteps');
     }
 
     // Ensure steps are not negative
@@ -408,13 +348,11 @@ class _HomeScreenState extends State<HomeScreen> {
       _steps = dailySteps;
     });
     _updateCO2Calculation();
-    
-    debugPrint('Daily steps updated: $_steps (Sensor: ${event.steps}, Baseline: $baseline)');
   }
 
   /// Handle pedometer errors
   void _onStepCountError(error) {
-    debugPrint('Pedometer error: $error');
+    // Silent error handling
   }
 
   // Midnight sync is now handled by MidnightSyncService singleton
@@ -424,16 +362,12 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _requestLocationPermissionAndFetch() async {
     try {
       LocationPermission permission = await Geolocator.checkPermission();
-      print('📍 Initial location permission status: $permission');
 
       if (permission == LocationPermission.denied) {
-        print('📍 Requesting location permission...');
         permission = await Geolocator.requestPermission();
-        print('📍 Permission after request: $permission');
       }
 
       if (permission == LocationPermission.deniedForever) {
-        print('📍 Location permission denied forever');
         // Show a small dialog asking user to open settings
         if (!mounted) return;
         showDialog(
@@ -460,41 +394,43 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         );
         // still try to fetch using default coordinates
-        await _simulateAQI(); // will use current default _location / coords
+        await _simulateAQI();
         return;
       }
 
       if (permission == LocationPermission.whileInUse ||
           permission == LocationPermission.always) {
-        print('📍 Permission granted! Getting location...');
         await _getCurrentLocation();
       } else {
         // permission denied - try fetching with default location (Delhi)
-        print('📍 Permission denied. Using default location.');
         await _simulateAQI();
       }
     } catch (e) {
-      print('Error requesting location permission: $e');
       await _simulateAQI();
     }
   }
 
   Future<void> _getCurrentLocation() async {
     try {
+      final locationSettings = Platform.isAndroid
+          ? AndroidSettings(
+              accuracy: LocationAccuracy.high,
+              distanceFilter: 0,
+            )
+          : AppleSettings(
+              accuracy: LocationAccuracy.high,
+              distanceFilter: 0,
+            );
       Position position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
+        locationSettings: locationSettings,
       );
       if (!mounted) return;
-      setState(() {
-        _location = '${position.latitude}, ${position.longitude}';
-      });
       
       // Get city name from coordinates
       await _getCityFromCoordinates(position.latitude, position.longitude);
       
       await _simulateAQI(latitude: position.latitude, longitude: position.longitude);
     } catch (e) {
-      print('Error getting location: $e');
       // fallback to default fetch
       await _simulateAQI();
     }
@@ -534,11 +470,9 @@ class _HomeScreenState extends State<HomeScreen> {
           setState(() {
             _cityName = city;
           });
-          print('📍 City found: $city');
         }
       }
     } catch (e) {
-      print('Error getting city name: $e');
       // Keep default city name
     }
   }
@@ -573,8 +507,6 @@ class _HomeScreenState extends State<HomeScreen> {
         },
       );
 
-      debugPrint("Fetching AQI: $aqiUri");
-
       final response = await http.get(aqiUri).timeout(const Duration(seconds: 12));
 
       if (response.statusCode == 200) {
@@ -608,13 +540,10 @@ class _HomeScreenState extends State<HomeScreen> {
         setState(() {
           _aqiValue = latestAqi ?? _aqiValue;
         });
-        debugPrint("AQI updated: $_aqiValue");
       } else {
-        debugPrint("AQI API returned ${response.statusCode}");
         // keep previous/default _aqiValue
       }
     } catch (e) {
-      debugPrint("Error fetching AQI: $e");
       // ignore and keep current/default _aqiValue
     } finally {
       if (!mounted) return;
@@ -669,9 +598,9 @@ class _HomeScreenState extends State<HomeScreen> {
   /// Get bottom message color based on CO2 saved
   Color _getBottomMessageColor(double co2Saved) {
     if (co2Saved > 5.0) {
-      return const Color(0xFF14532B); // Dark green
+      return  Color(0xFF14532B); // Dark green
     } else if (co2Saved >= 0.0) {
-      return const Color(0xFFF59E0B); // Orange/amber
+      return  Color(0xFFF59E0B); // Orange/amber
     } else {
       return  Color.fromARGB(255, 220, 38, 38); // Red
     }
@@ -722,9 +651,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (index == 0) {
       // Already on home page
     } else if (index == 1) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Add Button Pressed!')),
-      );
+      // Handle add action
     } else if (index == 2) {
       Navigator.pushReplacement(
         context,
@@ -793,7 +720,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               ],
                             ),
                             Text(
-                              '${_aqiValue}',
+                              '$_aqiValue',
                               style: TextStyle(
                                 fontSize: screenWidth * 0.06,
                                 fontFamily: 'WorkSansB',
@@ -878,7 +805,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildHeader(double screenWidth, double screenHeight) {
     return Container(
       width: screenWidth,
-      height: screenHeight * 0.32, // Increased height to match the design
+      height: screenHeight * 0.305, // Increased height to match the design
       decoration: const BoxDecoration(
         gradient: LinearGradient(
           colors: [Color(0xFF4CAF50), Color(0xFF66BB6A)],
@@ -917,7 +844,6 @@ class _HomeScreenState extends State<HomeScreen> {
               left: screenWidth * 0.05,
               right: screenWidth * 0.05,
               top: screenHeight * 0.05,
-              bottom: screenHeight * 0.005,
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -937,7 +863,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           width: screenWidth * 0.55,
                           height: 60,
                           decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.15),
+                            color: Colors.white.withValues(alpha: 0.15),
                             borderRadius: BorderRadius.circular(15),
                           ),
                           child: const Center(
@@ -1043,7 +969,7 @@ class _HomeScreenState extends State<HomeScreen> {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.08),
+            color: Colors.black.withValues(alpha: 0.08),
             blurRadius: 10,
             offset: const Offset(0, 4),
           ),
@@ -1415,7 +1341,7 @@ class _HomeScreenState extends State<HomeScreen> {
           borderRadius: BorderRadius.circular(24),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.08),
+              color: Colors.black.withValues(alpha: 0.08),
               blurRadius: 12,
               offset: const Offset(0, 4),
             ),
@@ -1522,37 +1448,103 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   // ==========================================
-  // DRIVING DISTANCE TRACKING
+  // DRIVING DISTANCE TRACKING (INTEGRATED)
   // ==========================================
 
-  /// Initialize accelerometer to detect vehicle motion patterns
-  void _initAccelerometer() {
-    _accelerometerSubscription = accelerometerEventStream().listen((AccelerometerEvent event) {
-      // Calculate magnitude of acceleration (total vibration)
-      double magnitude = sqrt(event.x * event.x + event.y * event.y + event.z * event.z);
-      
-      // Remove gravity (9.8 m/s²) to get just the vibration component
-      double vibration = (magnitude - 9.8).abs();
-      
-      // Keep rolling window of recent readings
-      _recentAccelReadings.add(vibration);
-      if (_recentAccelReadings.length > _accelWindowSize) {
-        _recentAccelReadings.removeAt(0);
+  // Tracking parameters (improved)
+  static const double _drivingSpeedThreshold = 15.0; // km/h — lower threshold catches city driving
+  static const double _maxRealisticSpeed = 180.0; // km/h — reject GPS teleportation
+  static const double _minDistanceThreshold = 10.0; // meters — smaller to catch slow-moving traffic
+  static const double _minAccuracy = 50.0; // meters — reject inaccurate fixes
+  static const double _vehicleVibrationThreshold = 1.2; // m/s² — slightly lower for smoother roads
+  static const int _accelWindowSize = 15; // larger window = less noise
+
+  /// Initialize and start background service
+  Future<void> _initializeAndStartBackgroundService() async {
+    try {
+      // Request notification permission first
+      final notificationStatus = await Permission.notification.request();
+      if (!notificationStatus.isGranted) {
+        debugPrint('❌ Notification permission not granted');
+        return;
       }
-      
-      // Calculate average vibration intensity
-      if (_recentAccelReadings.isNotEmpty) {
-        _vibrationIntensity = _recentAccelReadings.reduce((a, b) => a + b) / _recentAccelReadings.length;
+
+      // Check location permission
+      LocationPermission locationPermission = await Geolocator.checkPermission();
+      if (locationPermission == LocationPermission.denied) {
+        locationPermission = await Geolocator.requestPermission();
+      }
+      if (locationPermission == LocationPermission.denied ||
+          locationPermission == LocationPermission.deniedForever) {
+        debugPrint('❌ Location permission not granted');
+        return;
+      }
+
+      final service = FlutterBackgroundService();
+
+      // Create notification channel
+      const AndroidNotificationChannel channel = AndroidNotificationChannel(
+        'driving_tracker_channel',
+        'Driving Tracker',
+        description: 'Tracks your driving distance in the background',
+        importance: Importance.low,
+      );
+
+      final FlutterLocalNotificationsPlugin notificationsPlugin =
+          FlutterLocalNotificationsPlugin();
+
+      await notificationsPlugin
+          .resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>()
+          ?.createNotificationChannel(channel);
+
+      // Configure background service
+      await service.configure(
+        iosConfiguration: IosConfiguration(
+          autoStart: true,
+          onForeground: _onBackgroundServiceStart,
+          onBackground: _onIosBackground,
+        ),
+        androidConfiguration: AndroidConfiguration(
+          onStart: _onBackgroundServiceStart,
+          autoStart: true,
+          isForegroundMode: true,
+          notificationChannelId: 'driving_tracker_channel',
+          initialNotificationTitle: 'Driving Tracker',
+          initialNotificationContent: 'Tracking your driving distance',
+          foregroundServiceNotificationId: 888,
+        ),
+      );
+
+      await service.startService();
+      debugPrint('✅ Background driving service started');
+    } catch (e) {
+      debugPrint('❌ Error starting background service: $e');
+    }
+  }
+
+  /// Listen to updates from background service
+  void _listenToBackgroundService() {
+    final service = FlutterBackgroundService();
+    service.on('update').listen((event) {
+      if (event != null && mounted) {
+        final distance = event['distance'] as double?;
+        if (distance != null) {
+          setState(() {
+            _distanceDriven = distance;
+          });
+          _updateCO2Calculation();
+        }
       }
     });
   }
 
-  /// Check if phone is likely in a moving vehicle based on vibration
-  bool _isLikelyInVehicle() {
-    // Vehicle produces consistent vibration (1.5-4 m/s²)
-    // Walking produces irregular, lower vibration
-    // Stationary produces minimal vibration (< 0.5 m/s²)
-    return _vibrationIntensity >= _vehicleVibrationThreshold && _vibrationIntensity < 6.0;
+  /// iOS background handler
+  @pragma('vm:entry-point')
+  static Future<bool> _onIosBackground(ServiceInstance service) async {
+    WidgetsFlutterBinding.ensureInitialized();
+    DartPluginRegistrant.ensureInitialized();
+    return true;
   }
 
   /// Load saved driving distance from SharedPreferences
@@ -1562,7 +1554,6 @@ class _HomeScreenState extends State<HomeScreen> {
     final today = DateTime.now().toIso8601String().split('T')[0];
 
     if (savedDate != today) {
-      // New day, reset distance
       await prefs.setDouble('dailyDistance', 0.0);
       await prefs.setString('lastDrivingDate', today);
     }
@@ -1574,407 +1565,234 @@ class _HomeScreenState extends State<HomeScreen> {
     _updateCO2Calculation();
   }
 
-  /// Start background driving tracker
-  Future<void> _startDrivingTracker() async {
-    // Request location permission
-    LocationPermission permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
+  // ==========================================
+  // BACKGROUND SERVICE ENTRY POINT (static / isolate)
+  // Improved driving detection algorithm:
+  //  • Exponential moving average on accelerometer
+  //  • Weighted speed averaging over last 3 readings
+  //  • Bearing consistency check to reject GPS jitter
+  //  • Tiered speed classification
+  // ==========================================
+  @pragma('vm:entry-point')
+  static void _onBackgroundServiceStart(ServiceInstance service) async {
+    DartPluginRegistrant.ensureInitialized();
+
+    final FlutterLocalNotificationsPlugin notificationsPlugin =
+        FlutterLocalNotificationsPlugin();
+
+    const AndroidInitializationSettings androidInit =
+        AndroidInitializationSettings('@mipmap/ic_launcher');
+    const InitializationSettings initSettings =
+        InitializationSettings(android: androidInit);
+    await notificationsPlugin.initialize(initSettings);
+
+    // --- State ---
+    Position? lastPosition;
+    DateTime? lastPositionTime;
+    double distanceDriven = 0.0;
+    bool isServiceRunning = true;
+
+    // Accelerometer state (exponential moving average)
+    double vibrationEMA = 0.0;
+    const double emaAlpha = 0.2; // smoothing factor
+
+    // Speed history for weighted average (last 3 readings)
+    List<double> speedHistory = [];
+    const int speedWindowSize = 3;
+
+    // Bearing history for consistency check
+    double? lastBearing;
+
+    StreamSubscription? accelerometerSubscription;
+
+    // --- Load saved distance ---
+    final prefs = await SharedPreferences.getInstance();
+    final savedDate = prefs.getString('lastDrivingDate');
+    final today = DateTime.now().toIso8601String().split('T')[0];
+
+    if (savedDate != today) {
+      await prefs.setDouble('dailyDistance', 0.0);
+      await prefs.setString('lastDrivingDate', today);
+      distanceDriven = 0.0;
+    } else {
+      distanceDriven = prefs.getDouble('dailyDistance') ?? 0.0;
     }
 
-    if (permission == LocationPermission.deniedForever) {
-      debugPrint('Location permission denied forever');
-      return;
-    }
-
-    if (permission == LocationPermission.denied) {
-      debugPrint('Location permission denied');
-      return;
-    }
-
-    // Start tracking every 30 seconds (longer interval reduces GPS drift)
-    _locationTimer = Timer.periodic(const Duration(seconds: 30), (timer) async {
-      await _trackDriving();
+    // --- Accelerometer: exponential moving average ---
+    accelerometerSubscription = accelerometerEventStream().listen((event) {
+      double magnitude = sqrt(
+          event.x * event.x + event.y * event.y + event.z * event.z);
+      double vibration = (magnitude - 9.8).abs();
+      vibrationEMA = emaAlpha * vibration + (1 - emaAlpha) * vibrationEMA;
     });
 
-    setState(() => _isTracking = true);
-  }
-
-  /// Track driving based on speed
-  Future<void> _trackDriving() async {
-    try {
-      Position currentPosition = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-      );
-
-      // Check GPS accuracy - ignore poor quality positions
-      if (currentPosition.accuracy > _minAccuracy) {
-        debugPrint('Poor GPS accuracy: ${currentPosition.accuracy.toStringAsFixed(1)}m - skipping');
-        return;
-      }
-
-      if (_lastPosition != null && _lastPositionTime != null) {
-        // Calculate distance between last and current position
-        double distanceInMeters = Geolocator.distanceBetween(
-          _lastPosition!.latitude,
-          _lastPosition!.longitude,
-          currentPosition.latitude,
-          currentPosition.longitude,
-        );
-
-        // Calculate time difference in seconds
-        final now = DateTime.now();
-        final timeDiff = now.difference(_lastPositionTime!).inSeconds;
-
-        // Calculate speed based on distance and time (more reliable than GPS speed)
-        double speed = 0.0;
-        if (timeDiff > 0) {
-          speed = (distanceInMeters / timeDiff) * 3.6; // Convert m/s to km/h
-        }
-
-        // Check if phone is in a vehicle (vibration pattern)
-        bool inVehicle = _isLikelyInVehicle();
-        
-        debugPrint('Distance: ${distanceInMeters.toStringAsFixed(1)}m, Time: ${timeDiff}s, Speed: ${speed.toStringAsFixed(1)} km/h, Accuracy: ${currentPosition.accuracy.toStringAsFixed(1)}m, Vibration: ${_vibrationIntensity.toStringAsFixed(2)} m/s², InVehicle: $inVehicle');
-
-        // Only count if:
-        // 1. Speed is above threshold (likely driving)
-        // 2. Distance is above minimum (filter GPS drift)
-        // 3. Speed is realistic (< 200 km/h to filter GPS jumps)
-        // 4. Accelerometer detects vehicle vibration pattern (optional but helps accuracy)
-        if (speed >= _drivingSpeedThreshold && 
-            speed < 200.0 && 
-            distanceInMeters >= _minDistanceThreshold &&
-            (inVehicle || speed >= 40.0)) { // Require vehicle vibration OR high speed (40+ km/h)
-          double distanceInKm = distanceInMeters / 1000;
-          
-          setState(() {
-            _distanceDriven += distanceInKm;
-          });
-
-          // Save to SharedPreferences
-          final prefs = await SharedPreferences.getInstance();
-          final today = DateTime.now().toIso8601String().split('T')[0];
-          await prefs.setDouble('dailyDistance', _distanceDriven);
-          
-          // Also save with date key for midnight sync
-          await prefs.setDouble('driven_km_$today', _distanceDriven);
-          
-          debugPrint('✅ Driving detected! Distance: ${distanceInKm.toStringAsFixed(3)} km, Speed: ${speed.toStringAsFixed(1)} km/h, Vibration: ${_vibrationIntensity.toStringAsFixed(2)} m/s², Total: ${_distanceDriven.toStringAsFixed(2)} km');
-        } else if (distanceInMeters < _minDistanceThreshold) {
-          debugPrint('⏸️ Distance too small (${distanceInMeters.toStringAsFixed(1)}m) - likely GPS drift');
-        }
-      }
-
-      _lastPosition = currentPosition;
-      _lastPositionTime = DateTime.now();
-    } catch (e) {
-      debugPrint('Error tracking driving: $e');
-    }
-  }
-
-  /// Reset driving distance at midnight (called by existing midnight timer)
-  Future<void> _resetDrivingDistance() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setDouble('dailyDistance', 0.0);
-    await prefs.setString('lastDrivingDate', DateTime.now().toIso8601String().split('T')[0]);
-    
-    if (mounted) {
-      setState(() {
-        _distanceDriven = 0.0;
-      });
-      _updateCO2Calculation();
-    }
-  }
-
-  /// Request notification permission (required for Android 13+) and start background service
-  Future<void> _requestNotificationPermissionAndStartService() async {
-    // Request notification permission
-    final status = await Permission.notification.request();
-    
-    if (status.isGranted) {
-      debugPrint('✅ Notification permission granted - starting background service');
-      await _initializeBackgroundService();
-    } else if (status.isDenied) {
-      debugPrint('❌ Notification permission denied');
-      // Show dialog to user
-      if (mounted) {
-        showDialog(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            title: const Text('Notification Permission Required'),
-            content: const Text(
-              'Activity tracking requires notification permission to show your step count and driving distance in the background.'
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(ctx).pop(),
-                child: const Text('Cancel'),
-              ),
-              TextButton(
-                onPressed: () async {
-                  Navigator.of(ctx).pop();
-                  await Permission.notification.request();
-                  if (await Permission.notification.isGranted) {
-                    await _initializeBackgroundService();
-                  }
-                },
-                child: const Text('Grant Permission'),
-              ),
-            ],
-          ),
-        );
-      }
-    } else if (status.isPermanentlyDenied) {
-      debugPrint('❌ Notification permission permanently denied');
-      // Guide user to settings
-      if (mounted) {
-        showDialog(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            title: const Text('Notification Permission Required'),
-            content: const Text(
-              'Please enable notification permission in app settings to use background activity tracking.'
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(ctx).pop(),
-                child: const Text('Cancel'),
-              ),
-              TextButton(
-                onPressed: () async {
-                  Navigator.of(ctx).pop();
-                  await openAppSettings();
-                },
-                child: const Text('Open Settings'),
-              ),
-            ],
-          ),
-        );
-      }
-    }
-  }
-
-  // ==========================================
-  // BACKGROUND SERVICE FOR PERSISTENT TRACKING
-  // ==========================================
-
-  /// Initialize background service for continuous tracking
-  Future<void> _initializeBackgroundService() async {
-    final service = FlutterBackgroundService();
-    
-    // Configure notification channel for Android
-    const AndroidNotificationChannel channel = AndroidNotificationChannel(
-      'activity_tracker_channel',
-      'Activity Tracker',
-      description: 'Tracks your steps and driving in the background',
-      importance: Importance.low,
-    );
-
-    final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
-        FlutterLocalNotificationsPlugin();
-
-    await flutterLocalNotificationsPlugin
-        .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>()
-        ?.createNotificationChannel(channel);
-
-    // Configure and start background service
-    await service.configure(
-      iosConfiguration: IosConfiguration(
-        autoStart: true,
-        onForeground: onStart,
-        onBackground: onIosBackground,
-      ),
-      androidConfiguration: AndroidConfiguration(
-        onStart: onStart,
-        autoStart: true,
-        isForegroundMode: true,
-        notificationChannelId: 'activity_tracker_channel',
-        initialNotificationTitle: 'Activity Tracker',
-        initialNotificationContent: 'Tracking your steps and driving',
-        foregroundServiceNotificationId: 888,
-      ),
-    );
-
-    service.startService();
-  }
-
-  /// iOS background handler
-  @pragma('vm:entry-point')
-  static Future<bool> onIosBackground(ServiceInstance service) async {
-    return true;
-  }
-
-  /// Background service entry point
-  @pragma('vm:entry-point')
-  static void onStart(ServiceInstance service) async {
-    // Initialize dependencies
-    final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
-        FlutterLocalNotificationsPlugin();
-
-    // Initialize notification plugin for background service
-    const AndroidInitializationSettings initializationSettingsAndroid =
-        AndroidInitializationSettings('@mipmap/ic_launcher');
-    const InitializationSettings initializationSettings =
-        InitializationSettings(android: initializationSettingsAndroid);
-    await flutterLocalNotificationsPlugin.initialize(initializationSettings);
-
-    // Show initial notification
-    await flutterLocalNotificationsPlugin.show(
+    // Initial notification
+    await notificationsPlugin.show(
       888,
-      'Activity Tracker',
-      'Starting activity tracking...',
+      'Driving Tracker Active',
+      'Distance today: ${distanceDriven.toStringAsFixed(2)} km',
       const NotificationDetails(
         android: AndroidNotificationDetails(
-          'activity_tracker_channel',
-          'Activity Tracker',
-          channelDescription: 'Tracks your steps and driving in the background',
+          'driving_tracker_channel',
+          'Driving Tracker',
+          channelDescription: 'Tracks your driving distance in the background',
           importance: Importance.low,
           priority: Priority.low,
           ongoing: true,
           autoCancel: false,
-          visibility: NotificationVisibility.secret, // Hide from lock screen
         ),
       ),
     );
 
-    Position? lastPosition;
-    int totalSteps = 0;
-    int? baselineSteps;
+    // Listen for stop
+    service.on('stop').listen((event) {
+      isServiceRunning = false;
+      accelerometerSubscription?.cancel();
+      service.stopSelf();
+    });
 
-    // Listen to step counter
-    StreamSubscription<StepCount>? stepSubscription;
-    
-    try {
-      stepSubscription = Pedometer.stepCountStream.listen((StepCount event) async {
-        final prefs = await SharedPreferences.getInstance();
-        final today = DateTime.now().toIso8601String().split('T')[0];
-        final savedDate = prefs.getString('lastStepDate');
+    // --- Main tracking loop (every 15 s for better resolution) ---
+    Timer.periodic(const Duration(seconds: 15), (timer) async {
+      if (!isServiceRunning) {
+        timer.cancel();
+        accelerometerSubscription?.cancel();
+        return;
+      }
 
-        if (savedDate != today) {
-          // New day, reset
-          await prefs.setInt('dailySteps', 0);
-          await prefs.setInt('baselineSteps', event.steps);
-          await prefs.setString('lastStepDate', today);
-          baselineSteps = event.steps;
-          totalSteps = 0;
-        } else {
-          baselineSteps ??= prefs.getInt('baselineSteps') ?? event.steps;
-          totalSteps = event.steps - baselineSteps!;
-          if (totalSteps < 0) totalSteps = 0;
-          await prefs.setInt('dailySteps', totalSteps);
-        }
-
-        // Update notification with current steps
-        final distance = prefs.getDouble('dailyDistance') ?? 0.0;
-        await flutterLocalNotificationsPlugin.show(
-          888,
-          'Activity Tracker',
-          'Steps: $totalSteps | Driven: ${distance.toStringAsFixed(2)} km',
-          const NotificationDetails(
-            android: AndroidNotificationDetails(
-              'activity_tracker_channel',
-              'Activity Tracker',
-              channelDescription: 'Tracks your steps and driving in the background',
-              importance: Importance.low,
-              priority: Priority.low,
-              ongoing: true,
-              autoCancel: false,
-              visibility: NotificationVisibility.secret, // Hide from lock screen
-            ),
-          ),
-        );
-      });
-    } catch (e) {
-      print('Error in background step tracking: $e');
-    }
-
-    DateTime? lastPositionTime;
-
-    // Track driving every 30 seconds (longer interval reduces GPS drift)
-    Timer.periodic(const Duration(seconds: 30), (timer) async {
       try {
+        // Day rollover
+        final currentDate = DateTime.now().toIso8601String().split('T')[0];
         final prefs = await SharedPreferences.getInstance();
-        final today = DateTime.now().toIso8601String().split('T')[0];
-        final savedDate = prefs.getString('lastDrivingDate');
-
-        if (savedDate != today) {
-          // New day, reset distance
+        final saved = prefs.getString('lastDrivingDate');
+        if (saved != currentDate) {
           await prefs.setDouble('dailyDistance', 0.0);
-          await prefs.setString('lastDrivingDate', today);
+          await prefs.setString('lastDrivingDate', currentDate);
+          distanceDriven = 0.0;
           lastPosition = null;
           lastPositionTime = null;
+          speedHistory.clear();
+          lastBearing = null;
         }
 
-        Position currentPosition = await Geolocator.getCurrentPosition(
-          desiredAccuracy: LocationAccuracy.high,
+        // Permission check
+        LocationPermission perm = await Geolocator.checkPermission();
+        if (perm == LocationPermission.denied ||
+            perm == LocationPermission.deniedForever) return;
+
+        // Get position
+        final locationSettings = Platform.isAndroid
+            ? AndroidSettings(accuracy: LocationAccuracy.high, distanceFilter: 0)
+            : AppleSettings(accuracy: LocationAccuracy.high, distanceFilter: 0);
+
+        Position current = await Geolocator.getCurrentPosition(
+          locationSettings: locationSettings,
         );
 
-        // Check GPS accuracy - ignore poor quality positions
-        if (currentPosition.accuracy > 50.0) {
-          print('Poor GPS accuracy: ${currentPosition.accuracy.toStringAsFixed(1)}m - skipping');
-          return;
-        }
+        // Reject inaccurate fixes
+        if (current.accuracy > _minAccuracy) return;
 
-        if (lastPosition != null && lastPositionTime != null) {
-          double distanceInMeters = Geolocator.distanceBetween(
-            lastPosition!.latitude,
-            lastPosition!.longitude,
-            currentPosition.latitude,
-            currentPosition.longitude,
+        final pos = lastPosition;
+        final posTime = lastPositionTime;
+        if (pos != null && posTime != null) {
+          double distMeters = Geolocator.distanceBetween(
+            pos.latitude, pos.longitude,
+            current.latitude, current.longitude,
           );
 
-          // Calculate time difference and speed
           final now = DateTime.now();
-          final timeDiff = now.difference(lastPositionTime!).inSeconds;
-          double speed = 0.0;
-          if (timeDiff > 0) {
-            speed = (distanceInMeters / timeDiff) * 3.6; // m/s to km/h
-          }
+          final timeDiffSec = now.difference(posTime).inSeconds;
+          if (timeDiffSec <= 0) return;
 
-          // Only count if driving (speed >= 20 km/h, distance >= 20m, speed < 200 km/h)
-          if (speed >= 20.0 && speed < 200.0 && distanceInMeters >= 20.0) {
-            double distanceInKm = distanceInMeters / 1000;
-            double currentDistance = prefs.getDouble('dailyDistance') ?? 0.0;
-            double newDistance = currentDistance + distanceInKm;
-            await prefs.setDouble('dailyDistance', newDistance);
+          double instantSpeed = (distMeters / timeDiffSec) * 3.6; // km/h
+
+          // --- Weighted speed average ---
+          speedHistory.add(instantSpeed);
+          if (speedHistory.length > speedWindowSize) {
+            speedHistory.removeAt(0);
+          }
+          // Weighted: most recent reading has highest weight
+          double weightedSpeed = 0.0;
+          double totalWeight = 0.0;
+          for (int i = 0; i < speedHistory.length; i++) {
+            double w = (i + 1).toDouble(); // 1, 2, 3
+            weightedSpeed += speedHistory[i] * w;
+            totalWeight += w;
+          }
+          weightedSpeed /= totalWeight;
+
+          // --- Bearing consistency check ---
+          double bearing = Geolocator.bearingBetween(
+            pos.latitude, pos.longitude,
+            current.latitude, current.longitude,
+          );
+
+          bool bearingConsistent = true;
+          if (lastBearing != null && distMeters > _minDistanceThreshold) {
+            double bearingDiff = (bearing - lastBearing!).abs();
+            if (bearingDiff > 180) bearingDiff = 360 - bearingDiff;
+            // If bearing changed > 150° in one interval, likely GPS noise
+            bearingConsistent = bearingDiff < 150;
+          }
+          if (distMeters > _minDistanceThreshold) lastBearing = bearing;
+
+          // --- Vehicle vibration check (EMA-based) ---
+          bool inVehicle = vibrationEMA >= _vehicleVibrationThreshold &&
+              vibrationEMA < 6.0;
+
+          // --- Driving decision ---
+          bool isDriving = weightedSpeed >= _drivingSpeedThreshold &&
+              weightedSpeed < _maxRealisticSpeed &&
+              distMeters >= _minDistanceThreshold &&
+              bearingConsistent &&
+              (inVehicle || weightedSpeed >= 25.0); // high speed alone is enough
+
+          if (isDriving) {
+            // Accuracy-weighted distance: trust high-accuracy fixes more
+            double accuracyFactor = 1.0;
+            if (current.accuracy > 20) {
+              accuracyFactor = 20.0 / current.accuracy; // scale down noisy fixes
+            }
+
+            double distKm = (distMeters / 1000) * accuracyFactor;
+            distanceDriven += distKm;
+
+            // Persist
+            final today = DateTime.now().toIso8601String().split('T')[0];
+            await prefs.setDouble('dailyDistance', distanceDriven);
+            await prefs.setDouble('driven_km_$today', distanceDriven);
 
             // Update notification
-            final steps = prefs.getInt('dailySteps') ?? 0;
-            await flutterLocalNotificationsPlugin.show(
+            await notificationsPlugin.show(
               888,
-              'Activity Tracker',
-              'Steps: $steps | Driven: ${newDistance.toStringAsFixed(2)} km',
+              'Driving Tracker Active',
+              'Distance today: ${distanceDriven.toStringAsFixed(2)} km | ${weightedSpeed.toStringAsFixed(0)} km/h',
               const NotificationDetails(
                 android: AndroidNotificationDetails(
-                  'activity_tracker_channel',
-                  'Activity Tracker',
-                  channelDescription: 'Tracks your steps and driving in the background',
+                  'driving_tracker_channel',
+                  'Driving Tracker',
+                  channelDescription: 'Tracks your driving distance in the background',
                   importance: Importance.low,
                   priority: Priority.low,
                   ongoing: true,
                   autoCancel: false,
-                  visibility: NotificationVisibility.secret, // Hide from lock screen
                 ),
               ),
             );
-            
-            print('Driving: ${distanceInKm.toStringAsFixed(3)} km at ${speed.toStringAsFixed(1)} km/h, Total: ${newDistance.toStringAsFixed(2)} km');
+
+            // Send to UI
+            service.invoke('update', {
+              'distance': distanceDriven,
+              'speed': weightedSpeed,
+              'timestamp': DateTime.now().millisecondsSinceEpoch,
+            });
           }
         }
 
-        lastPosition = currentPosition;
+        lastPosition = current;
         lastPositionTime = DateTime.now();
       } catch (e) {
-        print('Error in background driving tracking: $e');
+        debugPrint('❌ Background tracking error: $e');
       }
-    });
-
-    // Listen for service stop
-    service.on('stopService').listen((event) {
-      stepSubscription?.cancel();
-      service.stopSelf();
     });
   }
 }

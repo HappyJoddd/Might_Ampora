@@ -29,14 +29,11 @@ class _CameraGalleryPickerPageState extends State<CameraGalleryPickerPage> {
   // ✅ Upload function using Hugging Face backend
 Future<Map<String, dynamic>?> _uploadImage(File imageFile) async {
   try {
-    final baseUrl = dotenv.env['BACKEND_URL'] ?? 
-      "https://might-ampora-backend-p4tz.onrender.com/api/v1";
+    final baseUrl = dotenv.env['BACKEND_URL'];
     final uri = Uri.parse("$baseUrl/gadgets/recognize");
 
     // ✅ Detect the MIME type (e.g., image/jpeg or image/png)
     final mimeType = lookupMimeType(imageFile.path) ?? 'image/jpeg';
-    print("🧠 Detected MIME type: $mimeType");
-
     final request = http.MultipartRequest('POST', uri);
 
     // ✅ Explicitly set MIME type when attaching file
@@ -56,18 +53,13 @@ Future<Map<String, dynamic>?> _uploadImage(File imageFile) async {
     final streamedResponse = await request.send();
     final response = await http.Response.fromStream(streamedResponse);
 
-    print("URI: $uri");
-    print("STATUS CODE: ${response.statusCode}");
-    print("RAW BODY: ${response.body}");
 
     if (response.statusCode == 200) {
       return jsonDecode(response.body);
     } else {
-      print("Upload failed → ${response.body}");
       return jsonDecode(response.body);
     }
   } catch (e) {
-    print("🚨 Upload exception: $e");
     return null;
   }
 }
@@ -82,8 +74,6 @@ Future<Map<String, dynamic>?> _uploadImage(File imageFile) async {
     if (!mounted) return;
 
     if (result != null && result['success'] == true) {
-      debugPrint("✅ Backend result: $result");
-
       // Extract mainName and confidence from result
       final data = result['data'];
       final mainName = data['mainName'] ?? '';
@@ -110,11 +100,7 @@ Future<Map<String, dynamic>?> _uploadImage(File imageFile) async {
         ),
       );
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(result?['message'] ?? "Failed to identify device. Try again."),
-        ),
-      );
+      // Upload failed silently
     }
   }
 
@@ -201,7 +187,7 @@ Future<Map<String, dynamic>?> _uploadImage(File imageFile) async {
         }
       }
     } catch (e) {
-      print('Error initializing camera: $e');
+      // Camera initialization failed - user will see no camera preview
     }
   }
 
@@ -211,7 +197,7 @@ Future<Map<String, dynamic>?> _uploadImage(File imageFile) async {
         final XFile image = await _cameraController!.takePicture();
         await _processImage(File(image.path));
       } catch (e) {
-        print('Error taking picture: $e');
+        // Picture capture failed silently
       }
     }
   }
@@ -223,7 +209,7 @@ Future<Map<String, dynamic>?> _uploadImage(File imageFile) async {
         await _processImage(File(image.path));
       }
     } catch (e) {
-      print('Error picking from gallery: $e');
+      // Gallery picker cancelled or failed
     }
   }
 
@@ -284,7 +270,7 @@ Future<Map<String, dynamic>?> _uploadImage(File imageFile) async {
                           child: Container(
                             padding: EdgeInsets.all(12),
                             decoration: BoxDecoration(
-                              color: Colors.black.withOpacity(0.4),
+                              color: Colors.black.withValues(alpha:0.4),
                               shape: BoxShape.circle,
                             ),
                             child: Icon(
@@ -394,7 +380,7 @@ Future<Map<String, dynamic>?> _uploadImage(File imageFile) async {
       width: screenWidth * 0.16,
       height: screenWidth * 0.16,
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.3),
+        color: Colors.white.withValues(alpha:0.3),
         shape: BoxShape.circle,
         border: Border.all(color: Colors.white, width: 3),
       ),
@@ -403,7 +389,7 @@ Future<Map<String, dynamic>?> _uploadImage(File imageFile) async {
   }
 }
 
-// 🎯 Frame painter (unchanged)
+// Frame painter (unchanged)
 class FramePainter extends CustomPainter {
   final double screenWidth;
   final double screenHeight;

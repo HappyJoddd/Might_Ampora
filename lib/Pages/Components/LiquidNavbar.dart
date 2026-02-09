@@ -42,8 +42,6 @@ class _LiquidNavbarState extends State<LiquidNavbar>
   }
 
   void _toggleOverlay() {
-    print("🎯 TOGGLE OVERLAY CALLED! Current state: $_showOverlay");
-    
     if (_showOverlay) {
       _removeOverlay();
     } else {
@@ -60,15 +58,15 @@ class _LiquidNavbarState extends State<LiquidNavbar>
     );
 
     Overlay.of(context).insert(_overlayEntry!);
-    print("✅ OVERLAY INSERTED!");
   }
 
   void _removeOverlay() {
     _overlayController.reverse().then((_) {
-      _overlayEntry?.remove();
-      _overlayEntry = null;
-      setState(() => _showOverlay = false);
-      print("❌ OVERLAY REMOVED (ANIMATED)!");
+      if (mounted) {
+        _overlayEntry?.remove();
+        _overlayEntry = null;
+        setState(() => _showOverlay = false);
+      }
     });
   }
 
@@ -78,7 +76,6 @@ class _LiquidNavbarState extends State<LiquidNavbar>
     _overlayEntry = null;
     setState(() => _showOverlay = false);
     _overlayController.reset();
-    print("❌ OVERLAY REMOVED (IMMEDIATE)!");
   }
 
   Widget _buildOverlayContent() {
@@ -94,14 +91,13 @@ class _LiquidNavbarState extends State<LiquidNavbar>
             Positioned.fill(
               child: GestureDetector(
                 onTap: () {
-                  print("⚫ BACKGROUND TAPPED!");
                   _toggleOverlay();
                 },
                 child: AnimatedBuilder(
                   animation: _overlayController,
                   builder: (context, child) {
                     return Container(
-                      color: Colors.black.withOpacity(0.45 * _overlayController.value),
+                      color: Colors.black.withValues(alpha: 0.45 * _overlayController.value),
                     );
                   },
                 ),
@@ -130,7 +126,6 @@ class _LiquidNavbarState extends State<LiquidNavbar>
                           imagePath: "images/Overlay/Scan.png",
                           label: "Discover the\nenergy drain",
                           onTap: () {
-                            print("🔥 FIRST CARD TAPPED!");
                             _removeOverlayImmediate();
                             Navigator.push(
                               context,
@@ -144,7 +139,6 @@ class _LiquidNavbarState extends State<LiquidNavbar>
                           imagePath: "images/Overlay/Solar.png",
                           label: "Harness the \npower of the \nsun and wind",
                           onTap: () {
-                            print("🔥 SECOND CARD TAPPED!");
                             _removeOverlayImmediate();
                             Navigator.push(
                               context,
@@ -186,21 +180,21 @@ class _LiquidNavbarState extends State<LiquidNavbar>
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                   colors: [
-                    Colors.white.withOpacity(0.1),
-                    const Color(0xFF2E7D32).withOpacity(0.6),
-                    Colors.white.withOpacity(0.05),
+                    Colors.white.withValues(alpha: 0.1),
+                    Color(0xFF2E7D32).withValues(alpha: 0.6),
+                    Colors.white.withValues(alpha: 0.05),
                   ],
                   stops: const [0.0, 0.5, 1.0],
                 ),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
+                    color: Colors.black.withValues(alpha: 0.1),
                     blurRadius: 15,
                     spreadRadius: 1,
                     offset: const Offset(0, 4),
                   ),
                   BoxShadow(
-                    color: const Color.fromARGB(255, 6, 106, 9).withOpacity(0.6),
+                    color: Color.fromARGB(255, 6, 106, 9).withValues(alpha: 0.6),
                     blurRadius: 10,
                     spreadRadius: -2,
                   ),
@@ -219,17 +213,17 @@ class _LiquidNavbarState extends State<LiquidNavbar>
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                     colors: [
-                      const Color(0xFF8EE9BE).withOpacity(0.6),
-                      Colors.white.withOpacity(0.1),
-                      const Color(0xFF8EE9BE).withOpacity(0.6),
+                      Color(0xFF8EE9BE).withValues(alpha: 0.6),
+                      Colors.white.withValues(alpha: 0.1),
+                      Color(0xFF8EE9BE).withValues(alpha: 0.6),
                     ],
                   ),
                   borderGradient: LinearGradient(
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                     colors: [
-                      Colors.white.withOpacity(0.3),
-                      Colors.white.withOpacity(0.1),
+                      Colors.white.withValues(alpha: 0.3),
+                      Colors.white.withValues(alpha: 0.1),
                     ],
                   ),
                   child: Padding(
@@ -266,7 +260,6 @@ class _LiquidNavbarState extends State<LiquidNavbar>
     final isSelected = widget.currentIndex == index;
     return GestureDetector(
       onTap: () {
-        print("📍 NAV ITEM $index TAPPED");
         widget.onItemSelected(index);
       },
       child: AnimatedContainer(
@@ -286,7 +279,6 @@ class _LiquidNavbarState extends State<LiquidNavbar>
   Widget _centerPlusButton() {
     return GestureDetector(
       onTap: () {
-        print("➕ PLUS BUTTON TAPPED!");
         _toggleOverlay();
       },
       child: AnimatedContainer(
@@ -301,9 +293,9 @@ class _LiquidNavbarState extends State<LiquidNavbar>
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
-                Colors.white.withOpacity(0.1),
-                const Color(0xFF2E7D32).withOpacity(0.6),
-                Colors.white.withOpacity(0.05),
+                Colors.white.withValues(alpha: 0.1),
+                Color(0xFF2E7D32).withValues(alpha: 0.6),
+                Colors.white.withValues(alpha: 0.05),
               ],
               stops: const [0.0, 0.5, 1.0],
             ),
@@ -320,7 +312,7 @@ class _LiquidNavbarState extends State<LiquidNavbar>
                   ),
                   child: Icon(
                     _showOverlay ? Icons.close_rounded : Icons.add_rounded,
-                    color: const Color(0xFF193B2D),
+                    color:  Color(0xFF193B2D),
                     size: 35,
                   ),
                 ),
@@ -351,7 +343,6 @@ class _OverlayItem extends StatelessWidget {
     
     return GestureDetector(
       onTap: () {
-        print("💥 OVERLAY ITEM TAPPED!");
         if (onTap != null) {
           onTap!();
         }
@@ -374,7 +365,7 @@ class _OverlayItem extends StatelessWidget {
               width: screenWidth * 0.35,
               height: screenWidth * 0.35,
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.15),
+                color: Colors.white.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(14),
               ),
               child: Center(

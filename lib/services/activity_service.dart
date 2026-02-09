@@ -5,8 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'auth_storage.dart';
 
 class ActivityService {
-  static final String baseUrl = dotenv.env['BACKEND_URL'] ?? 
-    "https://might-ampora-backend-p4tz.onrender.com/api/v1";
+  static final String? baseUrl = dotenv.env['BACKEND_URL'];
 
   /// Save daily activity to backend
   static Future<bool> saveDailyActivity({
@@ -30,14 +29,11 @@ class ActivityService {
       );
 
       if (response.statusCode == 200) {
-        print('✅ Activity saved to backend for $date');
         return true;
       } else {
-        print('❌ Failed to save activity: ${response.body}');
         return false;
       }
     } catch (e) {
-      print('❌ Error saving activity: $e');
       return false;
     }
   }
@@ -66,14 +62,11 @@ class ActivityService {
       );
 
       if (response.statusCode == 200) {
-        print('✅ Monthly summary updated for $month${date != null ? " (date: $date)" : ""}');
         return true;
       } else {
-        print('❌ Failed to update monthly summary: ${response.body}');
         return false;
       }
     } catch (e) {
-      print('❌ Error updating monthly summary: $e');
       return false;
     }
   }
@@ -85,22 +78,17 @@ class ActivityService {
         Uri.parse("$baseUrl/activity/$userId/past-week"),
       );
 
-      print('📡 Backend response status: ${response.statusCode}');
-      print('📡 Backend response body: ${response.body}');
-
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         // The response structure is: {data: {data: [...]}}
         // We need to access the nested 'data' array
         if (data['data'] != null && data['data']['data'] != null && data['data']['data'] is List) {
           final activities = List<Map<String, dynamic>>.from(data['data']['data']);
-          print('📊 Parsed ${activities.length} activities from backend');
           return activities;
         }
       }
       return [];
     } catch (e) {
-      print('❌ Error fetching past week activity: $e');
       return [];
     }
   }
@@ -112,21 +100,16 @@ class ActivityService {
         Uri.parse("$baseUrl/activity/$userId/monthly/current"),
       );
 
-      print('📡 Monthly summary response status: ${response.statusCode}');
-      print('📡 Monthly summary response body: ${response.body}');
-
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         // The response structure is: {data: {data: summary}}
         if (data['data'] != null && data['data']['data'] != null) {
           final summary = data['data']['data'];
-          print('📊 Monthly summary retrieved: $summary');
           return summary;
         }
       }
       return null;
     } catch (e) {
-      print('❌ Error fetching monthly summary: $e');
       return null;
     }
   }
@@ -139,7 +122,6 @@ class ActivityService {
       final userId = userDetails['userId'];
 
       if (userId == null || userId.isEmpty) {
-        print('⚠️ No userId found, skipping sync');
         return;
       }
 
@@ -157,8 +139,6 @@ class ActivityService {
       final co2SavedByWalking = (steps / 1000) * 0.75 * 0.12;
       final co2EmittedByDriving = drivenKm * 0.12;
       final savedCO2 = co2SavedByWalking - co2EmittedByDriving;
-
-      print('🔄 Syncing data for $dateStr: steps=$steps, driven=${drivenKm.toStringAsFixed(2)}km, CO2=${savedCO2.toStringAsFixed(2)}kg');
 
       // Save to backend
       await saveDailyActivity(
@@ -179,10 +159,8 @@ class ActivityService {
         savedCO2: savedCO2,
         date: dateStr, // Pass date for idempotency
       );
-
-      print('✅ Midnight sync completed for $dateStr');
     } catch (e) {
-      print('❌ Error during midnight sync: $e');
+      // Silent error handling
     }
   }
 }

@@ -54,37 +54,51 @@ class _OTPpageState extends State<OTPpage> {
     try {
       final phone = await AuthStorage.getUserNumber();
       if (phone == null || phone.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("⚠️ Missing phone number. Please login again.")),
+        if (!mounted) return;
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Session Expired'),
+            content: const Text('Please login again'),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.of(ctx).pop();
+                  Get.offAllNamed(RouteName.login);
+                },
+                child: const Text('OK'),
+              ),
+            ],
+          ),
         );
-        Get.offAllNamed(RouteName.login);
         return;
       }
 
       final result = await ApiService.sendOtp(phone);
       if (result['success'] == true) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("✅ OTP resent successfully!")),
-        );
         _startTimer();
         await AuthStorage.saveUserDetails(phone: phone);
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text("❌ Failed to resend OTP: ${result['error'] ?? 'Unknown error'}")),
-        );
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("🚨 Error: $e")),
-      );
+      // Silent error handling
     }
   }
 
 Future<void> _onContinue() async {
   final otp = _pinController.text.trim();
   if (otp.length != 4) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("⚠️ Please enter a valid 4-digit OTP")),
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Invalid OTP'),
+        content: const Text('Please enter a valid 4-digit OTP'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
     );
     return;
   }
@@ -96,10 +110,23 @@ Future<void> _onContinue() async {
     final phone = userDetails['phone'];
 
     if (phone == null || phone.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("⚠️ Missing phone number. Please login again.")),
+      if (!mounted) return;
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Session Expired'),
+          content: const Text('Please login again'),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                Get.offAllNamed(RouteName.login);
+              },
+              child: const Text('OK'),
+            ),
+          ],
+        ),
       );
-      Get.offAllNamed(RouteName.login);
       return;
     }
 
@@ -135,14 +162,8 @@ Future<void> _onContinue() async {
           location: user['location'],
         );
 
-        print('✅ OTP Login successful!');
-        print('📱 User providers: ${user['providers']}');
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("✅ Welcome back!")),
-        );
-
         // Go to home page
+        if (!mounted) return;
         Navigator.pushNamedAndRemoveUntil(
           context,
           RouteName.home,
@@ -153,10 +174,7 @@ Future<void> _onContinue() async {
         await AuthStorage.setLoggedIn(false);
         await AuthStorage.setHasRegistered(false);
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("✅ OTP verified! Please complete registration.")),
-        );
-
+        if (!mounted) return;
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(builder: (_) => const RegisterPage()),
@@ -164,17 +182,9 @@ Future<void> _onContinue() async {
       }
     } else {
       await AuthStorage.clearAll();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("❌ Invalid OTP: ${result['error'] ?? 'Unknown error'}"),
-        ),
-      );
     }
   } catch (e) {
     setState(() => _isLoading = false);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text("🚨 Something went wrong: $e")),
-    );
   }
 }
 
@@ -216,27 +226,10 @@ Future<void> _onContinue() async {
                       ),
                     ),
                     SizedBox(height: screenHeight * 0.01),
-                    RichText(
-                      text: TextSpan(
-                        children: [
-                          TextSpan(
-                            text: 'Might ',
-                            style: TextStyle(
-                              fontSize: screenWidth * 0.08,
-                              color: const Color(0xFFEF5F00),
-                              fontWeight: FontWeight.w400,
-                            ),
-                          ),
-                          TextSpan(
-                            text: 'Ampora',
-                            style: TextStyle(
-                              fontSize: screenWidth * 0.08,
-                              color: const Color(0xFF2B9A66),
-                              fontWeight: FontWeight.w400,
-                            ),
-                          ),
-                        ],
-                      ),
+                    Image.asset(
+                      'images/Logo_Horizontal.png',
+                      height: screenHeight * 0.08,
+                      fit: BoxFit.contain,
                     ),
                     SizedBox(height: screenHeight * 0.08),
                     Text(
@@ -303,7 +296,7 @@ Future<void> _onContinue() async {
                             fontFamily: 'WorkSansM',
                           ),
                           decoration: BoxDecoration(
-                            color: const Color(0xFF4CAF50).withOpacity(0.1),
+                            color:  Color(0xFF4CAF50).withValues(alpha:0.1),
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
                               color: const Color(0xFF4CAF50),

@@ -67,13 +67,10 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> {
     // 3. POWER RATING BENCHMARK
     // Compare against modern standards for common appliances
     // High wattage in old devices indicates outdated technology
-    bool isHighWattage = false;
     if (powerRating > 2000 && deviceAge > 5) {
       healthScore -= 1; // Old high-power device = inefficient
-      isHighWattage = true;
     } else if (powerRating > 3000) {
       healthScore -= 1; // Extremely high power rating
-      isHighWattage = true;
     }
     
     // 4. USAGE PATTERN ANALYSIS
@@ -90,16 +87,13 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> {
     }
     
     // Debug prints
-    print('🔍 Device Health Calculation (Fixed):');
-    print('   Power Rating: $powerRating W');
-    print('   Usage Hours: $usageHours hrs/day');
-    print('   Daily Consumption: $dailyConsumption kWh');
-    print('   Device Age: $deviceAge years');
-    print('   BEE Star Rating: ${beeRating > 0 ? beeRating : "Not rated"}');
-    print('   High Wattage Device: $isHighWattage');
-    print('   Excessive Usage: $excessiveUsage');
-    print('   Health Score: $healthScore');
-    
+
+
+
+
+
+
+
     // Final health determination
     // Score >= 3: Good (new/efficient device, normal usage)
     // Score 0-2: Average (medium age OR some efficiency issues)
@@ -112,10 +106,7 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> {
     } else {
       status = 'bad';
     }
-    
-    print('   Final Status: $status');
-    print('');
-    
+
     return status;
   }
 
@@ -175,7 +166,6 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> {
     final dailyConsumption = widget.data["dailyConsumption"]?.toString() ?? "0";
     final monthlyCost = widget.data["monthlyCost"]?.toString() ?? "0";
     final co2PerDay = widget.data["co2PerDay"]?.toString() ?? "0";
-    final perUnitCost = widget.data["perUnitCost"]?.toString() ?? "6";
     final deviceAge = widget.data["deviceAge"]?.toString() ?? "0";
     final beeRating = widget.data["beeRating"]?.toString() ?? "0";
 

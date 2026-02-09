@@ -38,8 +38,19 @@ Future<void> _handleRegistration() async {
     final phone = await AuthStorage.getUserNumber();
 
     if (phone == null || phone.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("⚠️ Missing phone number. Please login again.")),
+      if (!mounted) return;
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Session Expired'),
+          content: const Text('Please login again'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
       );
       return;
     }
@@ -80,27 +91,12 @@ Future<void> _handleRegistration() async {
       await AuthStorage.setHasRegistered(true);
       await AuthStorage.setLoggedIn(true);
 
-      print('✅ OTP Registration successful!');
-      print('📱 User providers: ${user['providers']}');
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("✅ Registration successful! Welcome.")),
-      );
-
       // 🏡 ✅ Go directly to Home Page
       if (!mounted) return;
       Navigator.pushNamedAndRemoveUntil(context, '/home', (route) => false);
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("❌ Failed: ${result['error'] ?? 'Registration failed'}"),
-        ),
-      );
     }
   } catch (e) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text("🚨 Error during registration: $e")),
-    );
+    // Silent error handling
   } finally {
     setState(() => _isLoading = false);
   }
@@ -129,27 +125,10 @@ Future<void> _handleRegistration() async {
 
                   /// App name
                   Center(
-                    child: RichText(
-                      text: TextSpan(
-                        children: [
-                          TextSpan(
-                            text: 'Might ',
-                            style: TextStyle(
-                              fontSize: screenWidth * 0.08,
-                              fontWeight: FontWeight.w400,
-                              color: const Color(0xFFEF5F00),
-                            ),
-                          ),
-                          TextSpan(
-                            text: 'Ampora',
-                            style: TextStyle(
-                              fontSize: screenWidth * 0.08,
-                              fontWeight: FontWeight.w400,
-                              color: const Color(0xFF2B9A66),
-                            ),
-                          ),
-                        ],
-                      ),
+                    child: Image.asset(
+                      'images/Logo_Horizontal.png',
+                      height: screenHeight * 0.08,
+                      fit: BoxFit.contain,
                     ),
                   ),
 

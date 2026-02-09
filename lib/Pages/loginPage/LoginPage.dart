@@ -41,8 +41,18 @@ Future<void> _handleSendOtp() async {
   final phoneNumber = _phoneController.text.trim();
 
   if (phoneNumber.isEmpty || !_isPhoneValid) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("⚠️ Please enter a valid phone number")),
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Invalid Phone Number'),
+        content: const Text('Please enter a valid phone number'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
     );
     return;
   }
@@ -65,9 +75,6 @@ Future<void> _handleSendOtp() async {
 
       // If user has valid token, just go home
       if (accessToken != null && refreshToken != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("✅ Already logged in!")),
-        );
         if (!mounted) return;
         Navigator.pushReplacementNamed(context, RouteName.home);
         return;
@@ -76,9 +83,6 @@ Future<void> _handleSendOtp() async {
       // If phone matches previously stored one → old user → OTP
       if (storedPhone == phoneNumber) {
         await AuthStorage.setHasRegistered(true);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("✅ OTP sent successfully!")),
-        );
         if (!mounted) return;
         Navigator.push(
           context,
@@ -94,19 +98,10 @@ Future<void> _handleSendOtp() async {
         );
       }
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            "❌ Failed: ${result['error'] ?? 'Unknown error'}",
-          ),
-        ),
-      );
+      // Silent failure - user can try again
     }
   } catch (e) {
     setState(() => _isLoading = false);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text("🚨 Something went wrong: $e")),
-    );
   }
 }
 
@@ -144,33 +139,10 @@ Future<void> _handleSendOtp() async {
                         ),
                       ),
                       SizedBox(height: screenHeight * 0.01),
-                      RichText(
-                        text: TextSpan(
-                          children: [
-                            TextSpan(
-                              text: 'Might ',
-                              style: TextStyle(
-                                fontSize: isTablet
-                                    ? screenWidth * 0.05
-                                    : screenWidth * 0.07,
-                                fontWeight: FontWeight.bold,
-                                color: const Color(0xFFEF5F00),
-                                fontFamily: 'WorkSansB',
-                              ),
-                            ),
-                            TextSpan(
-                              text: 'Ampora',
-                              style: TextStyle(
-                                fontSize: isTablet
-                                    ? screenWidth * 0.05
-                                    : screenWidth * 0.07,
-                                fontWeight: FontWeight.bold,
-                                color:  Color(0xFF2B9A66),
-                                fontFamily: 'WorkSansB',
-                              ),
-                            ),
-                          ],
-                        ),
+                      Image.asset(
+                        'images/Logo_Horizontal.png',
+                        height: isTablet ? screenHeight * 0.06 : screenHeight * 0.08,
+                        fit: BoxFit.contain,
                       ),
                     ],
                   ),
@@ -185,21 +157,13 @@ Future<void> _handleSendOtp() async {
                     onTap: () async {
                         setState(() => _isLoading = true);
 
-                        final success = await GoogleAuthService.signIn();
-
-                        setState(() => _isLoading = false);
+                        final result = await GoogleAuthService.signIn();
 
                         if (!mounted) return;
+                        setState(() => _isLoading = false);
 
-                        if (success) {
+                        if (result['success'] == true) {
                           Navigator.pushReplacementNamed(context, RouteName.home);
-                        } else {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text("❌ Google Sign-In failed. Please contact support or try phone login."),
-                              duration: Duration(seconds: 4),
-                            ),
-                          );
                         }
                       },
                     screenWidth: screenWidth,
@@ -216,31 +180,15 @@ Future<void> _handleSendOtp() async {
                         try {
                           final result = await FacebookAuthService.signInWithFacebook();
 
-                          setState(() => _isLoading = false);
-
                           if (!mounted) return;
+                          setState(() => _isLoading = false);
 
                           if (result['success'] == true) {
                             Navigator.pushReplacementNamed(context, RouteName.home);
-                          } else {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text("❌ Failed: ${result['message'] ?? 'Unknown error'}"),
-                                duration: const Duration(seconds: 4),
-                              ),
-                            );
                           }
                         } catch (e) {
-                          setState(() => _isLoading = false);
-                          
                           if (!mounted) return;
-                          
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text("❌ Facebook Sign-In failed: $e"),
-                              duration: const Duration(seconds: 4),
-                            ),
-                          );
+                          setState(() => _isLoading = false);
                         }
                       },
                     screenWidth: screenWidth,

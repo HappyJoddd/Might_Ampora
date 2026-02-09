@@ -5,18 +5,39 @@ import 'package:might_ampora/Routes/routes_name.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:might_ampora/services/midnight_sync_service.dart';
+import 'package:might_ampora/services/permission_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 🔹 Load environment variables
-  await dotenv.load(fileName: ".env");
+  try {
+    // 🔹 Load environment variables
+    await dotenv.load(fileName: ".env");
 
-  // 🔥 Initialize Firebase
-  await Firebase.initializeApp();
+    // 🔥 Initialize Firebase
+    await Firebase.initializeApp();
 
-  // ⏰ Initialize midnight sync service
-  MidnightSyncService().initialize();
+    // 🔐 Request all required permissions at app startup
+    try {
+      final permissionService = PermissionService();
+      await permissionService.requestAllPermissions();
+    } catch (e) {
+      // Permission error silently handled
+    }
+
+    // 🔐 Initialize notification service
+    try {
+      final permissionService = PermissionService();
+      await permissionService.initializeNotificationService();
+    } catch (e) {
+      // Notification service error silently handled
+    }
+
+    // ⏰ Initialize midnight sync service
+    MidnightSyncService().initialize();
+  } catch (e) {
+    // Main initialization error silently handled
+  }
 
   runApp(const MyApp());
 }

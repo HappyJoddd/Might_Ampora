@@ -9,32 +9,42 @@ class SplashPage extends GetView<SplashController> {
   Widget build(BuildContext context) {
 
     final screenWidth = MediaQuery.of(context).size.width;
-    final screenHeight = MediaQuery.of(context).size.height;
-
+    final screenHeight = MediaQuery.of(context).size.height;  
     return Scaffold(
       backgroundColor: Colors.white,
       body: Center(
         child: Column(
           children: [
-            const Spacer(),
+            SizedBox(height: screenHeight * 0.2), 
 
             /// App Logo
             ClipRRect(
               borderRadius: BorderRadius.circular(10),
               child: Image.asset(
                 "images/Logo.png",
-                width: screenWidth * 0.7,
+                width: screenWidth * 0.4,
                 fit: BoxFit.contain,
               ),
             ),
 
-            const Spacer(),
+            SizedBox(height: screenHeight * 0.1),
+
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: Image.asset(
+                "images/SlashScreen.png",
+                width: screenWidth * 0.8,
+                fit: BoxFit.contain,
+              ),
+            ),
+
+            Spacer(),
 
             /// Splash Image
             ClipRRect(
               borderRadius: BorderRadius.circular(10),
               child: Image.asset(
-                "images/SlashScreen.png",
+                "images/SlashScreen2.png",
                 width: screenWidth,
                 fit: BoxFit.cover,
               ),

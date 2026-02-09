@@ -62,7 +62,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         });
       }
     } catch (e) {
-      print('Error loading user data: $e');
+      // Error loading user data - keep defaults
     }
   }
 
@@ -82,7 +82,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
             _monthlySavedCO2 = (summary['totalSavedCO2'] ?? 0).toDouble();
             _isLoadingMonthlySummary = false;
           });
-          print('✅ Monthly summary loaded: steps=$_monthlySteps, driven=${_monthlyDrivenKm}km, CO2=${_monthlySavedCO2}kg');
         } else if (mounted) {
           setState(() {
             _isLoadingMonthlySummary = false;
@@ -90,7 +89,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         }
       }
     } catch (e) {
-      print('Error loading monthly summary: $e');
       if (mounted) {
         setState(() {
           _isLoadingMonthlySummary = false;
@@ -102,7 +100,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
 Future<void> _handleLogout() async {
   try {
     // 🔄 First, sync today's data to backend before logout
-    print('💾 Syncing today\'s data before logout...');
     try {
       final prefs = await SharedPreferences.getInstance();
       final userDetails = await AuthStorage.getUserDetails();
@@ -141,11 +138,8 @@ Future<void> _handleLogout() async {
           savedCO2: savedCO2,
           date: dateStr, // Idempotent - won't double-count if called twice
         );
-        
-        print('✅ Today\'s data synced before logout');
       }
     } catch (e) {
-      print('⚠️ Failed to sync data before logout: $e');
       // Continue with logout even if sync fails
     }
     
@@ -157,17 +151,12 @@ Future<void> _handleLogout() async {
       await ApiService.logout(refreshToken);
     } catch (e) {
       // Backend logout failed, but continue with local logout
-      print('Backend logout failed: $e');
     }
 
     // 🔸 Clear ALL auth data locally
     await AuthStorage.logout();
 
     if (!mounted) return;
-    
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("👋 Logged out successfully.")),
-    );
 
     // 🔁 Force navigate to login page and clear all routes
     Navigator.of(context).pushNamedAndRemoveUntil(
@@ -179,17 +168,132 @@ Future<void> _handleLogout() async {
     
     // Even if something fails, try to clear local data and go to login
     await AuthStorage.logout();
-    
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text("⚠️ Logout completed with errors: $e")),
-    );
-    
     Navigator.of(context).pushNamedAndRemoveUntil(
       RouteName.login,
       (route) => false,
     );
   }
 }
+
+  /// Handle account deletion with confirmation
+  Future<void> _handleDeleteAccount() async {
+    // Show confirmation dialog
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text(
+            '⚠️ Delete Account?',
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              fontFamily: 'WorkSansB',
+            ),
+          ),
+          content: const Text(
+            'This action is permanent and cannot be undone.\n'
+            'All your data will be permanently deleted:\n'
+            '• Profile information\n'
+            '• Activity history\n'
+            '• All saved data\n'
+            'Are you sure you want to delete your account?',
+            style: TextStyle(
+              fontFamily: 'Worksans',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text(
+                'Cancel',
+                style: TextStyle(
+                  color: Colors.grey,
+                  fontFamily: 'WorkSansSB',
+                ),
+              ),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+              ),
+              child: const Text(
+                'Delete',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontFamily: 'WorkSansB',
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true) return;
+
+    if (!mounted) return;
+
+    // Show loading indicator
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => WillPopScope(
+        onWillPop: () async => false,
+        child: const Center(
+          child: CircularProgressIndicator(),
+        ),
+      ),
+    );
+
+    try {
+      // Get refresh token
+      final refreshToken = await AuthStorage.getRefreshToken();
+
+      if (refreshToken == null || refreshToken.isEmpty) {
+        // No token available - clear data and navigate
+        if (mounted) Navigator.of(context).pop(); // Close loading
+        await AuthStorage.clearAll();
+        if (mounted) {
+          Navigator.of(context).pushNamedAndRemoveUntil(
+            RouteName.login,
+            (route) => false,
+          );
+        }
+        return;
+      }
+
+      // Call delete account API
+      final result = await ApiService.deleteAccount(refreshToken);
+
+      // Close loading dialog
+      if (mounted) Navigator.of(context).pop();
+
+      // Navigate to login regardless of API response
+      // If backend deletion succeeded, account is deleted
+      // If it failed, still clear local data and logout
+      if (mounted) {
+        Navigator.of(context).pushNamedAndRemoveUntil(
+          RouteName.login,
+          (route) => false,
+        );
+      }
+    } catch (e) {
+      // Close loading dialog
+      if (mounted) Navigator.of(context).pop();
+
+      // Clear local data even if API fails
+      await AuthStorage.clearAll();
+
+      // Navigate to login
+      if (mounted) {
+        Navigator.of(context).pushNamedAndRemoveUntil(
+          RouteName.login,
+          (route) => false,
+        );
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -374,7 +478,7 @@ Future<void> _handleLogout() async {
                                   borderRadius: BorderRadius.circular(12),
                                   boxShadow: [
                                     BoxShadow(
-                                      color: Colors.grey.withOpacity(0.1),
+                                      color: Colors.grey.withValues(alpha: 0.1),
                                       blurRadius: 10,
                                       offset: const Offset(0, 2),
                                     ),
@@ -449,6 +553,16 @@ Future<void> _handleLogout() async {
                           _handleLogout,
                         ),
 
+                        SizedBox(height: screenHeight * 0.015),
+
+                        // Delete Account
+                        _buildSettingItem(
+                          screenWidth,
+                          'Delete Account',
+                          Icons.delete_forever,
+                          _handleDeleteAccount,
+                        ),
+
                         // Add bottom padding for navbar
                         SizedBox(height: screenHeight * 0.15),
                       ],
@@ -501,7 +615,7 @@ Future<void> _handleLogout() async {
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
+            color: Colors.grey.withValues(alpha: 0.1),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
@@ -559,7 +673,7 @@ Future<void> _handleLogout() async {
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
+            color: Colors.grey.withValues(alpha: 0.1),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
@@ -632,7 +746,7 @@ Future<void> _handleLogout() async {
           borderRadius: BorderRadius.circular(12),
           boxShadow: [
             BoxShadow(
-              color: Colors.grey.withOpacity(0.1),
+              color: Colors.grey.withValues(alpha: 0.1),
               blurRadius: 10,
               offset: const Offset(0, 2),
             ),

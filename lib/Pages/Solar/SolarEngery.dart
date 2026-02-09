@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
+import 'dart:io' show Platform;
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import '../Components/LiquidNavbar.dart';
@@ -21,13 +22,11 @@ class _RenewableEnergyEstimationState extends State<RenewableEnergyEstimation> {
   LatLng _currentPosition = LatLng(28.6139, 77.2090); // Default Delhi
   int _selectedNavIndex = 0;
   final TextEditingController _searchController = TextEditingController();
-  List<dynamic> _searchSuggestions = [];
   final FocusNode _searchFocusNode = FocusNode();
 
   bool _isLoading = true;
   double? _avgSolarKwh;
   String _solarQuality = "";
-  double? _recentIrradiance;
   double? _windSpeed;
 
   @override
@@ -47,9 +46,6 @@ class _RenewableEnergyEstimationState extends State<RenewableEnergyEstimation> {
 
   void _onSearchChanged() {
     if (_searchController.text.isEmpty) {
-      setState(() {
-        _searchSuggestions = [];
-      });
       return;
     }
     if (_searchController.text.length >= 3) {
@@ -69,32 +65,11 @@ class _RenewableEnergyEstimationState extends State<RenewableEnergyEstimation> {
       );
 
       if (response.statusCode == 200) {
-        final List<dynamic> results = json.decode(response.body);
-        setState(() {
-          _searchSuggestions = results;
-        });
+        // Results received but not displayed (search suggestions feature incomplete)
       }
     } catch (e) {
-      print('Error searching location: $e');
+      // Handle error silently
     }
-  }
-
-  void _selectLocation(dynamic place) {
-    final lat = double.parse(place['lat']);
-    final lon = double.parse(place['lon']);
-    final displayName = place['display_name'];
-
-    setState(() {
-      _currentPosition = LatLng(lat, lon);
-      _searchController.text = displayName;
-      _searchSuggestions = [];
-      _searchFocusNode.unfocus();
-    });
-
-    final offsetLat = lat - 0.008;
-    _mapController.move(LatLng(offsetLat, lon), 15.0);
-
-    _fetchSolarData(lat, lon);
   }
 
   Future<void> _getCurrentLocation() async {
@@ -105,18 +80,9 @@ class _RenewableEnergyEstimationState extends State<RenewableEnergyEstimation> {
         permission = await Geolocator.requestPermission();
       }
 
-      if (permission == LocationPermission.deniedForever) {
-        print('🚫 Location permanently denied. Using default location.');
-        await _fetchSolarData(
-          _currentPosition.latitude,
-          _currentPosition.longitude,
-        );
-        return;
-      }
-
-      if (permission == LocationPermission.denied ||
+      if (permission == LocationPermission.deniedForever ||
+          permission == LocationPermission.denied ||
           permission == LocationPermission.unableToDetermine) {
-        print('⚠️ User denied or unable to determine location.');
         await _fetchSolarData(
           _currentPosition.latitude,
           _currentPosition.longitude,
@@ -126,8 +92,17 @@ class _RenewableEnergyEstimationState extends State<RenewableEnergyEstimation> {
 
       if (permission == LocationPermission.whileInUse ||
           permission == LocationPermission.always) {
+        final locationSettings = Platform.isAndroid
+            ? AndroidSettings(
+                accuracy: LocationAccuracy.high,
+                distanceFilter: 0,
+              )
+            : AppleSettings(
+                accuracy: LocationAccuracy.high,
+                distanceFilter: 0,
+              );
         Position position = await Geolocator.getCurrentPosition(
-          desiredAccuracy: LocationAccuracy.high,
+          locationSettings: locationSettings,
         );
 
         setState(() {
@@ -143,7 +118,6 @@ class _RenewableEnergyEstimationState extends State<RenewableEnergyEstimation> {
         await _fetchSolarData(position.latitude, position.longitude);
       }
     } catch (e) {
-      print('🚨 Error getting location: $e');
       await _fetchSolarData(
         _currentPosition.latitude,
         _currentPosition.longitude,
@@ -151,14 +125,12 @@ class _RenewableEnergyEstimationState extends State<RenewableEnergyEstimation> {
     }
   }
 
-  /// Fetch solar + wind data from backend or Open-Meteo
+  /// Fetch solar + wind data from Open-Meteo API
   Future<void> _fetchSolarData(double lat, double lon) async {
     if (!mounted) return;
     setState(() => _isLoading = true);
 
     try {
-      print('🌞 Fetching Solar & Wind data for $lat, $lon');
-
       // Build both Open-Meteo URIs
       final solarUri = Uri.https('api.open-meteo.com', '/v1/forecast', {
         'latitude': '$lat',
@@ -184,7 +156,7 @@ class _RenewableEnergyEstimationState extends State<RenewableEnergyEstimation> {
       String solarQuality = "Unknown";
       double? latestWindSpeed;
 
-      // ✅ Parse solar data
+      // Parse solar data
       if (responses[0].statusCode == 200) {
         final solarData = json.decode(responses[0].body);
         final daily = solarData['daily'];
@@ -207,11 +179,9 @@ class _RenewableEnergyEstimationState extends State<RenewableEnergyEstimation> {
             solarQuality = "Low";
           }
         }
-      } else {
-        print('⚠️ Solar request failed: ${responses[0].statusCode}');
       }
 
-      // ✅ Parse wind data
+      // Parse wind data
       if (responses[1].statusCode == 200) {
         final windData = json.decode(responses[1].body);
         final hourly = windData['hourly'];
@@ -219,26 +189,18 @@ class _RenewableEnergyEstimationState extends State<RenewableEnergyEstimation> {
           final windValues = List<double>.from(
             (hourly['windspeed_10m'] as List).map((e) => (e ?? 0).toDouble()),
           );
-          latestWindSpeed = windValues.isNotEmpty
-              ? windValues.last
-              : null; // latest hour value
+          latestWindSpeed = windValues.isNotEmpty ? windValues.last : null;
         }
-      } else {
-        print('⚠️ Wind request failed: ${responses[1].statusCode}');
       }
 
       if (!mounted) return;
       setState(() {
         _avgSolarKwh = avgSolarKwh;
         _solarQuality = solarQuality;
-        _recentIrradiance = avgSolarKwh;
         _windSpeed = latestWindSpeed;
         _isLoading = false;
       });
-
-      print('✅ Solar=${_avgSolarKwh}, Wind=${_windSpeed}');
     } catch (e) {
-      print('🚨 Error fetching energy data: $e');
       if (!mounted) return;
       setState(() => _isLoading = false);
     }
@@ -332,7 +294,7 @@ class _RenewableEnergyEstimationState extends State<RenewableEnergyEstimation> {
                             ),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withOpacity(0.1),
+                                color: Colors.black.withValues(alpha:0.1),
                                 blurRadius: 8,
                                 offset: const Offset(0, 2),
                               ),
@@ -362,7 +324,7 @@ class _RenewableEnergyEstimationState extends State<RenewableEnergyEstimation> {
                         ),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withOpacity(0.1),
+                            color: Colors.black.withValues(alpha:0.1),
                             blurRadius: 10,
                           ),
                         ],

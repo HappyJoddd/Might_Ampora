@@ -6,7 +6,7 @@ import 'auth_storage.dart';
 
 class ApiService {
   static final String? baseUrl =
-    dotenv.env['BACKEND_URL'] ?? "https://might-ampora-backend-p4tz.onrender.com/api/v1"; // Replace with your backend URL or use dotenv
+    dotenv.env['BACKEND_URL']; // Replace with your backend URL or use dotenv
 
   // ============================================================
   // 🔹 TOKEN & AUTH HELPERS
@@ -211,6 +211,37 @@ return {"success": true, "data": decoded["data"] ?? decoded};
     }
   }
 
+  static Future<Map<String, dynamic>> deleteAccount(String? refreshToken) async {
+    try {
+      if (refreshToken == null || refreshToken.isEmpty) {
+        await AuthStorage.clearAll();
+        return {'success': false, 'error': 'Authentication required'};
+      }
+
+      final response = await http
+          .post(
+            Uri.parse("$baseUrl/users/delete-account"),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'refreshToken': refreshToken}),
+          )
+          .timeout(const Duration(seconds: 30));
+
+      // Clear local data regardless of response
+      await AuthStorage.clearAll();
+
+      if (response.statusCode == 200) {
+        return {'success': true};
+      } else {
+        // Account deletion failed on server, but local data is cleared
+        return {'success': false, 'error': 'Server error occurred'};
+      }
+    } catch (e) {
+      // Network error or timeout - clear local data anyway
+      await AuthStorage.clearAll();
+      return {'success': false, 'error': 'Network error'};
+    }
+  }
+
   // ============================================================
   // 🔹 GENERIC API CLIENT FOR AUTHENTICATED REQUESTS
   // ============================================================
@@ -237,7 +268,6 @@ return {"success": true, "data": decoded["data"] ?? decoded};
   static Future<Map<String, dynamic>> _sendWithAuth(
       Future<http.Response> Function() requestFunc) async {
     try {
-      final token = await AuthStorage.getAccessToken();
       final response = await requestFunc().then((res) async {
         if (res.statusCode != 401) return res;
 

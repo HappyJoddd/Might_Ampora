@@ -23,7 +23,7 @@
 	<key>NSLocationAlwaysUsageDescription</key>
 	<string>We need access to your location to provide accurate air quality information</string>
 	<key>CFBundleDisplayName</key>
-	<string>Might Ampora</string>
+	<string>Vive</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>

@@ -9,8 +9,6 @@ class FacebookAuthService {
   /// Sign in with Facebook using Firebase Authentication
   static Future<Map<String, dynamic>> signInWithFacebook() async {
     try {
-      print('🔵 Starting Facebook Sign-In...');
-
       // Trigger the Facebook authentication flow
       final LoginResult loginResult = await FacebookAuth.instance.login(
         permissions: ['email', 'public_profile'],
@@ -27,8 +25,6 @@ class FacebookAuthService {
         throw Exception('Failed to get Facebook access token');
       }
 
-      print('🔵 Facebook access token obtained');
-
       // Create a credential from the access token
       final OAuthCredential facebookCredential = 
           FacebookAuthProvider.credential(accessToken.tokenString);
@@ -42,7 +38,6 @@ class FacebookAuthService {
       }
 
       final User user = userCredential.user!;
-      print('🔵 Firebase user: ${user.displayName} (${user.email})');
 
       // Get the Firebase ID token
       final idToken = await user.getIdToken();
@@ -51,13 +46,8 @@ class FacebookAuthService {
         throw Exception('Failed to get Firebase ID token');
       }
 
-      print('🔵 Firebase ID token obtained');
-
       // Send the ID token to your backend
-      print('🔵 Sending token to backend...');
       final response = await ApiService.signInWithFacebook(idToken);
-
-      print('🔵 Backend response: $response');
 
       if (response['success'] == true) {
         final data = response['data'];
@@ -82,14 +72,11 @@ class FacebookAuthService {
         await AuthStorage.setLoggedIn(true);
         await AuthStorage.setHasRegistered(true);
 
-        print('✅ Facebook Sign-In successful! Tokens and user data saved.');
-        print('📱 User providers: ${data['user']['providers']}');
         return {'success': true, 'data': data};
       } else {
         throw Exception(response['message'] ?? 'Backend error');
       }
     } on FirebaseAuthException catch (e) {
-      print('❌ Firebase Auth error: ${e.code} - ${e.message}');
       
       if (e.code == 'account-exists-with-different-credential') {
         throw Exception('An account already exists with the same email address but different sign-in credentials.');
@@ -101,7 +88,6 @@ class FacebookAuthService {
       
       rethrow;
     } catch (e) {
-      print('❌ Facebook Sign-In error: $e');
       rethrow;
     }
   }

@@ -58,11 +58,70 @@ class _EditDetailsPageState extends State<EditDetailsPage> {
             _usageController.text.replaceAll(RegExp(r'[^0-9.]'), ''),
           ) ??
           0;
+
+      // Validate average daily usage is between 0-24 hours
+      if (hours < 0 || hours > 24) {
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Invalid Daily Usage'),
+            content: const Text('Average daily usage must be between 0-24 hours.'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+        return;
+      }
+
       final double costPerUnit =
           double.tryParse(
             _perUnitCostController.text.replaceAll(RegExp(r'[^0-9.]'), ''),
           ) ??
           6;
+
+      // Validate per unit cost is positive
+      if (costPerUnit <= 0) {
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Invalid Cost'),
+            content: const Text('Per unit cost must be a positive number.'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+        return;
+      }
+
+      final deviceAge = double.tryParse(
+        _deviceAgeController.text.replaceAll(RegExp(r'[^0-9.]'), ''),
+      ) ?? 0;
+
+      // Validate device age is positive
+      if (deviceAge <= 0) {
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Invalid Device Age'),
+            content: const Text('Device age must be a positive number.'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+        return;
+      }
 
       // Energy calculations
       final double dailyConsumption = (power * hours) / 1000; // kWh/day

@@ -26,9 +26,7 @@ class _ApplianceSelectionPageState extends State<ApplianceSelectionPage> {
         MaterialPageRoute(builder: (context) => const HomeScreen()),
       );
     } else if (index == 1) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Add Button Pressed!')),
-      );
+      // Add button tapped
     } else if (index == 2) {
       Navigator.pushReplacement(
         context,

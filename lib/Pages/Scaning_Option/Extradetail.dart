@@ -4,7 +4,6 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'detail.dart';
-import 'package:http/http.dart' as http;
 
 
 // Use environment variable for backend URL
@@ -52,11 +51,70 @@ class _ExtraDetailPageState extends State<ExtraDetailPage> {
             _usageController.text.replaceAll(RegExp(r'[^0-9.]'), ''),
           ) ??
           0;
+
+      // Validate average daily usage is between 0-24 hours
+      if (hours < 0 || hours > 24) {
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Invalid Daily Usage'),
+            content: const Text('Average daily usage must be between 0-24 hours.'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+        return;
+      }
+
       final double costPerUnit =
           double.tryParse(
             _perUnitCostController.text.replaceAll(RegExp(r'[^0-9.]'), ''),
           ) ??
           6;
+
+      // Validate per unit cost is positive
+      if (costPerUnit <= 0) {
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Invalid Cost'),
+            content: const Text('Per unit cost must be a positive number.'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+        return;
+      }
+
+      final deviceAge = double.tryParse(
+        _deviceAgeController.text.replaceAll(RegExp(r'[^0-9.]'), ''),
+      ) ?? 0;
+
+      // Validate device age is positive
+      if (deviceAge <= 0) {
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Invalid Device Age'),
+            content: const Text('Device age must be a positive number.'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+        return;
+      }
 
       // 🔹 Energy calculations
       final double dailyConsumption = (power * hours) / 1000; // kWh/day
@@ -242,11 +300,8 @@ class _ExtraDetailPageState extends State<ExtraDetailPage> {
           : widget.data;
 
       if (parsed is! Map) {
-        debugPrint("❌ Data is not a Map");
         return;
       }
-
-      debugPrint("✅ Raw backend data: $parsed");
 
       // Extract nested "data" object
       Map<String, dynamic> innerData = {};
@@ -275,15 +330,12 @@ class _ExtraDetailPageState extends State<ExtraDetailPage> {
         // ✅ NEW: Show confidence if available
         String? confidence = innerData["confidence"]?.toString();
         if (confidence != null) {
-          debugPrint("🎯 Detection Confidence: $confidence");
         }
       });
 
-      debugPrint("✅ FINAL mainName: $mainName");
-      debugPrint("✅ FINAL star rating: $selectedStarRating");
-      debugPrint("✅ FINAL wattage: ${_powerRatingController.text}");
-    } catch (e, st) {
-      debugPrint("❌ Error parsing backend data: $e\n$st");
+
+    } catch (e) {
+      // Silent error handling
     }
   }
 
