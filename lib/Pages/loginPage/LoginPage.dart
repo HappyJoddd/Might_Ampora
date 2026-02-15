@@ -5,7 +5,6 @@ import 'package:might_ampora/Routes/routes_name.dart';
 import 'package:might_ampora/services/api_service.dart';
 import 'package:might_ampora/services/auth_storage.dart';
 import 'package:might_ampora/services/google_auth_service.dart';
-import 'package:might_ampora/services/facebook_auth_service.dart';
 import 'Otp.dart';
 
 class LoginPage extends StatefulWidget {
@@ -164,31 +163,6 @@ Future<void> _handleSendOtp() async {
 
                         if (result['success'] == true) {
                           Navigator.pushReplacementNamed(context, RouteName.home);
-                        }
-                      },
-                    screenWidth: screenWidth,
-                    screenHeight: screenHeight,
-                  ),
-                  SizedBox(height: screenHeight * 0.02),
-                  _buildSocialButton(
-                    label: "Continue with Facebook",
-                    asset: "images/Facebook.png",
-                    color: Colors.white,
-                    onTap: () async {
-                        setState(() => _isLoading = true);
-
-                        try {
-                          final result = await FacebookAuthService.signInWithFacebook();
-
-                          if (!mounted) return;
-                          setState(() => _isLoading = false);
-
-                          if (result['success'] == true) {
-                            Navigator.pushReplacementNamed(context, RouteName.home);
-                          }
-                        } catch (e) {
-                          if (!mounted) return;
-                          setState(() => _isLoading = false);
                         }
                       },
                     screenWidth: screenWidth,

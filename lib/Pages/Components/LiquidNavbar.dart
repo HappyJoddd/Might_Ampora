@@ -170,7 +170,7 @@ class _LiquidNavbarState extends State<LiquidNavbar>
         children: [
           // Glassmorphism navbar with gradient border at BOTTOM
           Positioned(
-            bottom: screenH * 0.01,
+            bottom: 0,
             left: screenW * 0.05,
             right: screenW * 0.05,
             child: Container(

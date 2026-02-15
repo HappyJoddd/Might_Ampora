@@ -596,7 +596,7 @@ class _DeviceDetailsPage2State extends State<DeviceDetailsPage2> {
 
           // Bottom Navbar
           Positioned(
-            bottom: 0,
+            bottom: screenHeight * 0.025,
             left: 0,
             right: 0,
             child: LiquidNavbar(

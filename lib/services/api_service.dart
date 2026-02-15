@@ -50,21 +50,6 @@ class ApiService {
   }
 }
 
-  static Future<Map<String, dynamic>> signInWithFacebook(String idToken) async {
-  try {
-    final response = await http.post(
-      Uri.parse("$baseUrl/users/facebook"),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({'idToken': idToken}),
-    );
-
-    return _parseResponse(response);
-  } catch (e) {
-    return {'success': false, 'error': e.toString()};
-  }
-}
-
-
   static Future<Map<String, dynamic>> signInWithOTP({
   required String phone,
   required String name,

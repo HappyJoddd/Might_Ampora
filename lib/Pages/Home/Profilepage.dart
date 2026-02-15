@@ -571,10 +571,10 @@ Future<void> _handleLogout() async {
                 ],
               ),
             ),
-
+             
             // Bottom Navigation Bar
             Positioned(
-              bottom: 0,
+              bottom: screenHeight * 0.025,
               left: 0,
               right: 0,
               child: LiquidNavbar(
