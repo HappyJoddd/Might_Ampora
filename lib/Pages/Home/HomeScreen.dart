@@ -1064,7 +1064,7 @@ class _HomeScreenState extends State<HomeScreen> {
     } else if (index == 1) {
       // Handle add action
     } else if (index == 2) {
-      Navigator.pushReplacement(
+      Navigator.push(
         context,
         MaterialPageRoute(builder: (context) => const ProfileScreen()),
       );

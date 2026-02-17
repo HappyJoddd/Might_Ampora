@@ -28,6 +28,7 @@ class _RenewableEnergyEstimationState extends State<RenewableEnergyEstimation> {
   double? _avgSolarKwh;
   String _solarQuality = "";
   double? _windSpeed;
+  String _windQuality = "";
 
   @override
   void initState() {
@@ -182,6 +183,7 @@ class _RenewableEnergyEstimationState extends State<RenewableEnergyEstimation> {
       }
 
       // Parse wind data
+      String windQuality = "";
       if (responses[1].statusCode == 200) {
         final windData = json.decode(responses[1].body);
         final hourly = windData['hourly'];
@@ -190,6 +192,17 @@ class _RenewableEnergyEstimationState extends State<RenewableEnergyEstimation> {
             (hourly['windspeed_10m'] as List).map((e) => (e ?? 0).toDouble()),
           );
           latestWindSpeed = windValues.isNotEmpty ? windValues.last : null;
+          
+          // Calculate wind quality based on speed
+          if (latestWindSpeed != null) {
+            if (latestWindSpeed >= 10.0) {
+              windQuality = "High";
+            } else if (latestWindSpeed >= 4) {
+              windQuality = "Average";
+            } else {
+              windQuality = "Low";
+            }
+          }
         }
       }
 
@@ -198,6 +211,7 @@ class _RenewableEnergyEstimationState extends State<RenewableEnergyEstimation> {
         _avgSolarKwh = avgSolarKwh;
         _solarQuality = solarQuality;
         _windSpeed = latestWindSpeed;
+        _windQuality = windQuality;
         _isLoading = false;
       });
     } catch (e) {
@@ -355,20 +369,20 @@ class _RenewableEnergyEstimationState extends State<RenewableEnergyEstimation> {
                               subtitle: _solarQuality.isNotEmpty
                                   ? _solarQuality
                                   : 'Unknown',
-                              description: _avgSolarKwh != null
-                                  ? (_avgSolarKwh! >= 4.0
-                                        ? 'High solar potential for this location — suitable for commercial or residential PV systems.'
-                                        : 'Low solar potential for this location — consider site-specific assessment before sizing a PV system.')
-                                  : 'Solar potential data is not available for the selected location.',
-                              valueColor: _avgSolarKwh == null
+                              description: _solarQuality.isEmpty
+                                  ? 'Solar potential data is not available for the selected location.'
+                                  : _solarQuality == 'High'
+                                      ? 'High solar potential for this location — suitable for commercial or residential PV systems.'
+                                      : _solarQuality == 'Medium'
+                                          ? 'Average solar potential for this location — suitable for residential PV systems with proper orientation.'
+                                          : 'Low solar potential for this location — consider site-specific assessment before sizing a PV system.',
+                              valueColor: _solarQuality.isEmpty
                                   ? Colors.grey
-                                  : (_avgSolarKwh! >= 4.0
-                                        ? const Color(
-                                            0xFF2B9A66,
-                                          ) // 🟩 Green for good potential
-                                        : const Color(
-                                            0xFFE53935,
-                                          )), // 🟥 Red for low potential
+                                  : _solarQuality == 'High'
+                                      ? Color(0xFF218358) // 🟩 Green for high
+                                      : _solarQuality == 'Medium'
+                                          ? Color(0xFFEF5F00) // 🟧 Orange for average
+                                          : Color(0xFFE53935), // 🟥 Red for low
                               icon: Icons.wb_sunny,
                             ),
 
@@ -378,21 +392,23 @@ class _RenewableEnergyEstimationState extends State<RenewableEnergyEstimation> {
                               value: _windSpeed != null
                                   ? "${_windSpeed!.toStringAsFixed(1)} m/s"
                                   : '-',
-                              subtitle: 'Average windspeed',
-                              description: _windSpeed != null
-                                  ? (_windSpeed! >= 5.0
-                                        ? 'Strong wind potential — viable for wind or hybrid systems.'
-                                        : 'Weak wind potential — may not be suitable for standalone wind power generation.')
-                                  : 'Wind potential data is not available for the selected location.',
-                              valueColor: _windSpeed == null
+                              subtitle: _windQuality.isNotEmpty
+                                  ? _windQuality
+                                  : 'Unknown',
+                              description: _windQuality.isEmpty
+                                  ? 'Wind potential data is not available for the selected location.'
+                                  : _windQuality == 'High'
+                                      ? 'High wind potential — viable for wind turbines or hybrid renewable systems.'
+                                      : _windQuality == 'Average'
+                                          ? 'Average wind potential — may be suitable for small-scale wind generation with proper assessment.'
+                                          : 'Low wind potential — may not be suitable for standalone wind power generation.',
+                              valueColor: _windQuality.isEmpty
                                   ? Colors.grey
-                                  : (_windSpeed! >= 5.0
-                                        ? const Color(
-                                            0xFF2B9A66,
-                                          ) // 🟩 Green for strong potential
-                                        : const Color(
-                                            0xFFE53935,
-                                          )), // 🟥 Red for weak potential
+                                  : _windQuality == 'High'
+                                      ? Color(0xFF218358) // 🟩 Green for high
+                                      : _windQuality == 'Average'
+                                          ? Color(0xFFEF5F00) // 🟧 Orange for average
+                                          : Color(0xFFE53935), // 🟥 Red for low
                               icon: Icons.air,
                             ),
 

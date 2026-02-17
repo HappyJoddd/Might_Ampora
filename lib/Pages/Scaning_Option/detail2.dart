@@ -603,10 +603,7 @@ class _DeviceDetailsPage2State extends State<DeviceDetailsPage2> {
               currentIndex: 0,
               onItemSelected: (index) {
                 if (index == 0) {
-                  Navigator.pushReplacement(
-                    context,
-                    MaterialPageRoute(builder: (context) => const HomeScreen()),
-                  );
+                  Navigator.popUntil(context, (route) => route.isFirst);
                 } else if (index == 1) {
                   // Placeholder for add new device
                 } else if (index == 2) {

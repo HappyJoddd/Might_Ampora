@@ -651,14 +651,11 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> {
               currentIndex: 0,
               onItemSelected: (index) {
                 if (index == 0) {
-                  Navigator.pushReplacement(
-                    context,
-                    MaterialPageRoute(builder: (context) => const HomeScreen()),
-                  );
+                  Navigator.popUntil(context, (route) => route.isFirst);
                 } else if (index == 1) {
                   // Placeholder for add new device
                 } else if (index == 2) {
-                  Navigator.pushReplacement(
+                  Navigator.push(
                     context,
                     MaterialPageRoute(
                       builder: (context) => const ProfileScreen(),

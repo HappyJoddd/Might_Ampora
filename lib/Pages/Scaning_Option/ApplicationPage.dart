@@ -21,14 +21,11 @@ class _ApplianceSelectionPageState extends State<ApplianceSelectionPage> {
     });
     if (index == 0) {
       // Home
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const HomeScreen()),
-      );
+      Navigator.popUntil(context, (route) => route.isFirst);
     } else if (index == 1) {
       // Add button tapped
     } else if (index == 2) {
-      Navigator.pushReplacement(
+      Navigator.push(
         context,
         MaterialPageRoute(builder: (context) => const ProfileScreen()),
       );

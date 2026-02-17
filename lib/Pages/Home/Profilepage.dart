@@ -581,10 +581,7 @@ Future<void> _handleLogout() async {
                 currentIndex: _currentIndex,
                 onItemSelected: (index) {
                   if (index == 0) {
-                    Navigator.pushReplacement(
-                      context,
-                      MaterialPageRoute(builder: (context) => const HomeScreen()),
-                    );
+                    Navigator.pop(context);
                   } else if (index == 2) {
                     // Already on profile page
                     setState(() => _currentIndex = index);
