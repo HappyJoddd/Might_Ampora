@@ -61,6 +61,7 @@ dependencies:
   firebase_auth: ^5.3.4
   flutter_dotenv: ^5.1.0
   flutter_launcher_icons: ^0.14.4
+  health: ^13.3.1
 
 dev_dependencies:
   flutter_test:

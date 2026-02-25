@@ -581,7 +581,7 @@ Future<void> _handleLogout() async {
                 currentIndex: _currentIndex,
                 onItemSelected: (index) {
                   if (index == 0) {
-                    Navigator.pop(context);
+                    Navigator.popUntil(context, (route) => route.isFirst);
                   } else if (index == 2) {
                     // Already on profile page
                     setState(() => _currentIndex = index);

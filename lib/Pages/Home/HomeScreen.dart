@@ -14,6 +14,7 @@ import 'dart:ui'; // Add this if not present
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:http/http.dart' as http;
+import 'package:health/health.dart'; // For iOS HealthKit step counting
 import '../Components/LiquidNavbar.dart';
 import 'Profilepage.dart';
 import '../Scaning_Option/EnergyPage.dart';
@@ -353,6 +354,9 @@ class _HomeScreenState extends State<HomeScreen> {
   int _steps = 0;
   StreamSubscription<StepCount>? _stepCountStream;
   
+  // iOS HealthKit for step counting
+  Timer? _healthFetchTimer;
+  
   // Normalize to date only (remove time component)
   DateTime get _todayDate => DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
   late DateTime _selectedDate;
@@ -391,6 +395,11 @@ class _HomeScreenState extends State<HomeScreen> {
     _fetchActivityForDate(_selectedDate);
     _startCO2UpdateTimer();
     
+    // Start iOS HealthKit step fetching if on iOS
+    if (Platform.isIOS) {
+      _startIOSHealthDataTimer();
+    }
+    
     // Scroll to center (today) after first frame
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_calendarScrollController.hasClients) {
@@ -411,6 +420,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void dispose() {
     _stepCountStream?.cancel();
     _co2UpdateTimer?.cancel();
+    _healthFetchTimer?.cancel(); // Cancel iOS health fetch timer
     _calendarScrollController.dispose();
     super.dispose();
   }
@@ -419,7 +429,92 @@ class _HomeScreenState extends State<HomeScreen> {
     await _loadSteps();
     await _loadDrivingDistance();
     await _restoreTodayFromBackendIfNeeded();
-    _initPedometer();
+    
+    // Initialize step tracking based on platform
+    if (Platform.isIOS) {
+      // iOS: Fetch steps from HealthKit
+      await _fetchIOSHealthData();
+    } else {
+      // Android: Use pedometer stream
+      _initPedometer();
+    }
+  }
+
+  // ==========================================
+  // iOS HEALTHKIT STEP COUNTING
+  // ==========================================
+  
+  /// Start timer to fetch iOS health data periodically
+  void _startIOSHealthDataTimer() {
+    // Initial fetch
+    _fetchIOSHealthData();
+    
+    // Fetch every 5 minutes to keep steps updated
+    _healthFetchTimer = Timer.periodic(const Duration(minutes: 5), (timer) {
+      _fetchIOSHealthData();
+    });
+  }
+
+  /// Fetch step count from iOS HealthKit
+  Future<void> _fetchIOSHealthData() async {
+    if (!Platform.isIOS || !mounted) return;
+    
+    try {
+      final health = Health();
+      
+      // Define the types to fetch
+      final types = [HealthDataType.STEPS];
+      final permissions = [HealthDataAccess.READ];
+      
+      // Request authorization
+      bool authorized = await health.requestAuthorization(types, permissions: permissions);
+      
+      if (!authorized) {
+        print('iOS HealthKit authorization not granted');
+        return;
+      }
+
+      // Fetch steps for today
+      final now = DateTime.now();
+      final midnight = DateTime(now.year, now.month, now.day);
+      
+      List<HealthDataPoint> healthData = await health.getHealthDataFromTypes(
+        types: types,
+        startTime: midnight,
+        endTime: now,
+      );
+
+      // Remove duplicates
+      healthData = Health().removeDuplicates(healthData);
+
+      // Calculate total steps
+      int totalSteps = 0;
+      for (var point in healthData) {
+        if (point.type == HealthDataType.STEPS) {
+          final value = point.value;
+          if (value is NumericHealthValue) {
+            totalSteps += value.numericValue.toInt();
+          }
+        }
+      }
+
+      // Save to SharedPreferences
+      final prefs = await SharedPreferences.getInstance();
+      final today = now.toIso8601String().split('T')[0];
+      await prefs.setInt('dailySteps', totalSteps);
+      await prefs.setInt('steps_$today', totalSteps);
+      await prefs.setString('lastStepDate', today);
+
+      if (!mounted) return;
+      setState(() {
+        _steps = totalSteps;
+      });
+      _updateCO2Calculation();
+      
+      print('iOS HealthKit: Fetched $totalSteps steps for today');
+    } catch (e) {
+      print('Error fetching iOS health data: $e');
+    }
   }
 
   /// Fetch activity data for selected date

@@ -2,26 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>CADisableMinimumFrameDurationOnPhone</key>
+	<true/>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
-	<key>NSCameraUsageDescription</key>
-	<string>We need access to your camera to take photos of your devices</string>
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>We need access to your photo library to select images</string>
-	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>We need access to save photos to your library</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>We need access to your microphone for video recording</string>
-	<key>NSMotionUsageDescription</key>
-	<string>We need access to your motion and fitness data to track your steps</string>
-	<key>NSHealthShareUsageDescription</key>
-	<string>We need access to read your step data from HealthKit to display your daily step count</string>
-	<key>NSHealthUpdateUsageDescription</key>
-	<string>We need access to write step data to HealthKit</string>
-	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>We need access to your location to get air quality data for your area</string>
-	<key>NSLocationAlwaysUsageDescription</key>
-	<string>We need access to your location to provide accurate air quality information</string>
 	<key>CFBundleDisplayName</key>
 	<string>Vive</string>
 	<key>CFBundleExecutable</key>
@@ -38,9 +22,42 @@
 	<string>$(FLUTTER_BUILD_NAME)</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.googleusercontent.apps.450485083447-grr4djbf2qh9jde6kdrnqlr62sh64kll</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<key>GIDClientID</key>
+	<string>4450485083447-grr4djbf2qh9jde6kdrnqlr62sh64kll.apps.googleusercontent.com</string>
 	<key>LSRequiresIPhoneOS</key>
+	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>We need access to your camera to take photos of your devices</string>
+	<key>NSHealthShareUsageDescription</key>
+	<string>We need access to read your step data from HealthKit to display your daily step count</string>
+	<key>NSHealthUpdateUsageDescription</key>
+	<string>We need access to write step data to HealthKit</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>We need access to your location to provide accurate air quality information</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>We need access to your location to get air quality data for your area</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>We need access to your microphone for video recording</string>
+	<key>NSMotionUsageDescription</key>
+	<string>We need access to your motion and fitness data to track your steps</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>We need access to save photos to your library</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>We need access to your photo library to select images</string>
+	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
@@ -59,9 +76,5 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
-	<key>CADisableMinimumFrameDurationOnPhone</key>
-	<true/>
-	<key>UIApplicationSupportsIndirectInputEvents</key>
-	<true/>
 </dict>
 </plist>
