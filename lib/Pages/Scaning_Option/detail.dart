@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:io';
 import '../Components/LiquidNavbar.dart';
-import '../Home/HomeScreen.dart';
 import '../Home/Profilepage.dart';
 import 'EnergyPage.dart';
 import 'editdetails.dart';

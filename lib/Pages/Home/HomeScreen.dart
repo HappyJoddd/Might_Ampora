@@ -470,7 +470,6 @@ class _HomeScreenState extends State<HomeScreen> {
       bool authorized = await health.requestAuthorization(types, permissions: permissions);
       
       if (!authorized) {
-        print('iOS HealthKit authorization not granted');
         return;
       }
 
@@ -510,10 +509,9 @@ class _HomeScreenState extends State<HomeScreen> {
         _steps = totalSteps;
       });
       _updateCO2Calculation();
-      
-      print('iOS HealthKit: Fetched $totalSteps steps for today');
+
+    // ignore: empty_catches
     } catch (e) {
-      print('Error fetching iOS health data: $e');
     }
   }
 

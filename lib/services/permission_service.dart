@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:permission_handler/permission_handler.dart';
 
@@ -14,50 +15,81 @@ class PermissionService {
   /// Request all required permissions at app startup
   Future<void> requestAllPermissions() async {
     try {
-      // Request activity recognition for step counting
-      await Permission.activityRecognition.request();
+      // iOS uses HealthKit for step counting, not activityRecognition
+      if (Platform.isIOS) {
+        // For iOS, motion permission is handled differently
+        // Health data permission is requested when you first access HealthKit
+        await Permission.sensors.request();
+      } else {
+        // Android uses activity recognition
+        await Permission.activityRecognition.request();
+      }
 
-      // Request notification permission
+      // Request notification permission (works on both platforms)
       await Permission.notification.request();
 
-      // Request fine location for GPS tracking
-      await Permission.location.request();
+      // Request location permission
+      await Permission.locationWhenInUse.request();
 
       // Request camera permission
       await Permission.camera.request();
     } catch (e) {
-      // Silent error handling
     }
   }
 
   /// Initialize notification channels (safe to call at startup)
   Future<void> initializeNotificationService() async {
     try {
-      // Create notification channel for Android
-      const AndroidNotificationChannel channel = AndroidNotificationChannel(
-        'activity_tracker_channel',
-        'Activity Tracker',
-        description: 'Tracks your steps and driving',
-        importance: Importance.low,
-      );
-
       final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
           FlutterLocalNotificationsPlugin();
 
-      await flutterLocalNotificationsPlugin
-          .resolvePlatformSpecificImplementation<
-              AndroidFlutterLocalNotificationsPlugin>()
-          ?.createNotificationChannel(channel);
+      if (Platform.isAndroid) {
+        // Create notification channel for Android only
+        const AndroidNotificationChannel channel = AndroidNotificationChannel(
+          'activity_tracker_channel',
+          'Activity Tracker',
+          description: 'Tracks your steps and driving',
+          importance: Importance.low,
+        );
+
+        await flutterLocalNotificationsPlugin
+            .resolvePlatformSpecificImplementation<
+                AndroidFlutterLocalNotificationsPlugin>()
+            ?.createNotificationChannel(channel);
+      }
 
       // Initialize notification plugin
       const AndroidInitializationSettings initializationSettingsAndroid =
           AndroidInitializationSettings('@mipmap/ic_launcher');
+      
+      // iOS initialization settings
+      const DarwinInitializationSettings initializationSettingsIOS =
+          DarwinInitializationSettings(
+        requestAlertPermission: true,
+        requestBadgePermission: true,
+        requestSoundPermission: true,
+      );
+      
       const InitializationSettings initializationSettings =
-          InitializationSettings(android: initializationSettingsAndroid);
+          InitializationSettings(
+            android: initializationSettingsAndroid,
+            iOS: initializationSettingsIOS,
+          );
 
       await flutterLocalNotificationsPlugin.initialize(initializationSettings);
     } catch (e) {
-      // Silent error handling
     }
+  }
+  
+  /// Request camera permission when needed
+  Future<bool> requestCameraPermission() async {
+    final status = await Permission.camera.request();
+    return status.isGranted;
+  }
+  
+  /// Request location permission when needed
+  Future<bool> requestLocationPermission() async {
+    final status = await Permission.locationWhenInUse.request();
+    return status.isGranted;
   }
 }

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'ManualDetail.dart';
 import '../Components/LiquidNavbar.dart';
-import '../Home/HomeScreen.dart';
 import '../Home/Profilepage.dart';
 
 class ApplianceSelectionPage extends StatefulWidget {
