@@ -5,6 +5,7 @@ import 'package:might_ampora/Routes/routes_name.dart';
 import 'package:might_ampora/services/api_service.dart';
 import 'package:might_ampora/services/auth_storage.dart';
 import 'package:might_ampora/services/google_auth_service.dart';
+import 'package:might_ampora/services/apple_auth_service.dart';
 import 'Otp.dart';
 
 class LoginPage extends StatefulWidget {
@@ -168,6 +169,31 @@ Future<void> _handleSendOtp() async {
                     screenWidth: screenWidth,
                     screenHeight: screenHeight,
                   ),
+
+                  /// Apple Sign-In — only shown on iOS
+                  if (AppleAuthService.isAvailable) ...[
+                    SizedBox(height: screenHeight * 0.015),
+                    _buildSocialButton(
+                      label: "Continue with Apple",
+                      asset: "images/Apple.png",
+                      color: Colors.black,
+                      textColor: Colors.white,
+                      onTap: () async {
+                        setState(() => _isLoading = true);
+
+                        final result = await AppleAuthService.signIn();
+
+                        if (!mounted) return;
+                        setState(() => _isLoading = false);
+
+                        if (result['success'] == true) {
+                          Navigator.pushReplacementNamed(context, RouteName.home);
+                        }
+                      },
+                      screenWidth: screenWidth,
+                      screenHeight: screenHeight,
+                    ),
+                  ],
                   SizedBox(height: screenHeight * 0.04),
 
                   /// Divider
@@ -288,7 +314,9 @@ Future<void> _handleSendOtp() async {
     required Function() onTap,
     required double screenWidth,
     required double screenHeight,
+    Color? textColor,
   }) {
+    final fgColor = textColor ?? Colors.black87;
     return SizedBox(
       width: double.infinity,
       height: screenHeight * 0.07,
@@ -296,7 +324,7 @@ Future<void> _handleSendOtp() async {
         onPressed: onTap,
         style: ElevatedButton.styleFrom(
           backgroundColor: color,
-          foregroundColor: Colors.black87,
+          foregroundColor: fgColor,
           elevation: 1,
           side: BorderSide(color: Colors.grey[300]!, width: 1),
           shape: RoundedRectangleBorder(
@@ -310,8 +338,9 @@ Future<void> _handleSendOtp() async {
               asset,
               width: screenWidth * 0.06,
               height: screenWidth * 0.06,
+              color: textColor,  // tint the icon to match text color
               errorBuilder: (context, error, stackTrace) {
-                return Icon(Icons.person, size: screenWidth * 0.06);
+                return Icon(Icons.person, size: screenWidth * 0.06, color: fgColor);
               },
             ),
             SizedBox(width: screenWidth * 0.03),
@@ -321,6 +350,7 @@ Future<void> _handleSendOtp() async {
                 fontSize: screenWidth * 0.04,
                 fontWeight: FontWeight.w500,
                 fontFamily: 'WorkSansM',
+                color: fgColor,
               ),
             ),
           ],

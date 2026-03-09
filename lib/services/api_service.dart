@@ -50,6 +50,26 @@ class ApiService {
   }
 }
 
+  static Future<Map<String, dynamic>> signInWithApple({
+    required String idToken,
+    String? name,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse("$baseUrl/users/apple"),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'idToken': idToken,
+          if (name != null) 'name': name,
+        }),
+      );
+
+      return _parseResponse(response);
+    } catch (e) {
+      return {'success': false, 'error': e.toString()};
+    }
+  }
+
   static Future<Map<String, dynamic>> signInWithOTP({
   required String phone,
   required String name,
