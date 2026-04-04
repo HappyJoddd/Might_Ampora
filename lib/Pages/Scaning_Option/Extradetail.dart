@@ -30,7 +30,7 @@ class _ExtraDetailPageState extends State<ExtraDetailPage> {
   final _deviceAgeController = TextEditingController();
 
   String mainName = "Unknown Appliance";
-  int selectedStarRating = 3; // Example default rating
+  String? mainBrand; // null means hidden, non-null & non-Unknown means shown
 
   @override
   void initState() {
@@ -128,11 +128,11 @@ class _ExtraDetailPageState extends State<ExtraDetailPage> {
             imageFile: widget.imageFile,
             data: {
               "deviceName": mainName,
+              "brand": mainBrand,
               "powerRating": power.toStringAsFixed(1),
               "usageHours": hours.toStringAsFixed(1),
               "perUnitCost": costPerUnit.toStringAsFixed(2),
               "deviceAge": _deviceAgeController.text,
-              "beeRating": selectedStarRating,
               "dailyConsumption": dailyConsumption.toStringAsFixed(2),
               "monthlyCost": monthlyCost.toStringAsFixed(2),
               "co2PerDay": co2PerDay.toStringAsFixed(2),
@@ -186,13 +186,29 @@ class _ExtraDetailPageState extends State<ExtraDetailPage> {
                   ),
                   SizedBox(width: screenWidth * 0.04),
                   Expanded(
-                    child: Text(
-                      mainName,
-                      style: TextStyle(
-                        fontSize: screenWidth * 0.055,
-                        fontWeight: FontWeight.bold,
-                        fontFamily: 'WorkSansB',
-                      ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          mainName,
+                          style: TextStyle(
+                            fontSize: screenWidth * 0.055,
+                            fontWeight: FontWeight.bold,
+                            fontFamily: 'WorkSansB',
+                          ),
+                        ),
+                        if (mainBrand != null &&
+                            mainBrand!.isNotEmpty &&
+                            mainBrand!.toLowerCase() != 'unknown')
+                          Text(
+                            mainBrand!,
+                            style: TextStyle(
+                              fontSize: screenWidth * 0.035,
+                              color: Colors.grey[600],
+                              fontFamily: 'WorkSans',
+                            ),
+                          ),
+                      ],
                     ),
                   ),
                 ],
@@ -292,55 +308,43 @@ class _ExtraDetailPageState extends State<ExtraDetailPage> {
     );
   }
 
-  /// ✅ Safely parse backend data
+  /// Parse the new Gemini backend response
   void _parseBackendData() {
     try {
       dynamic parsed = widget.data is String
           ? jsonDecode(widget.data)
           : widget.data;
 
-      if (parsed is! Map) {
-        return;
-      }
+      if (parsed is! Map) return;
 
       // Extract nested "data" object
-      Map<String, dynamic> innerData = {};
-      if (parsed.containsKey("data")) {
-        innerData = Map<String, dynamic>.from(parsed["data"]);
-      }
+      final Map<String, dynamic> innerData =
+          parsed.containsKey("data")
+              ? Map<String, dynamic>.from(parsed["data"])
+              : {};
 
       setState(() {
         mainName = innerData["mainName"]?.toString() ?? "Unknown Appliance";
-        String? rating = innerData["starRating"]?.toString();
 
-        if (rating != null && rating != "Not Visible") {
-          // Try to parse numeric star rating (e.g., "3 Star" -> 3)
-          final match = RegExp(r'(\d+)').firstMatch(rating);
-          selectedStarRating = match != null ? int.parse(match.group(1)!) : 3;
-        } else {
-          selectedStarRating = 3; // Default to 3 stars
-        }
+        // Brand — only set if present and not "Unknown"
+        final brand = innerData["mainBrand"]?.toString();
+        mainBrand = (brand != null &&
+                brand.isNotEmpty &&
+                brand.toLowerCase() != 'unknown')
+            ? brand
+            : null;
 
-        // ✅ NEW: Backend now returns estimatedWattage directly from Hugging Face
-        String? estimatedWattage = innerData["estimatedWattage"]?.toString();
+        // Gemini returns estimatedWattage as "700 W" — strip the unit and prefill
+        final estimatedWattage = innerData["estimatedWattage"]?.toString();
         if (estimatedWattage != null && estimatedWattage.isNotEmpty) {
-          _powerRatingController.text = estimatedWattage;
-        }
-
-        // ✅ NEW: Show confidence if available
-        String? confidence = innerData["confidence"]?.toString();
-        if (confidence != null) {
+          _powerRatingController.text =
+              estimatedWattage.replaceAll(RegExp(r'\s*[Ww]\s*$'), '').trim();
         }
       });
-
-
     } catch (e) {
       // Silent error handling
     }
   }
-
-  // ✅ REMOVED: _fetchEstimatedWattage() - Backend now returns wattage directly with recognition response
-  // No need for separate API call since Hugging Face model returns everything in one go
 
   Widget _buildLabel(String label) => Padding(
     padding: const EdgeInsets.only(bottom: 8),

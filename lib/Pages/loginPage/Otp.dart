@@ -182,9 +182,40 @@ Future<void> _onContinue() async {
       }
     } else {
       await AuthStorage.clearAll();
+      if (!mounted) return;
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Verification Failed'),
+          content: Text(result['error']?.toString() ?? 'Something went wrong. Please try again.'),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+                Get.offAllNamed(RouteName.login);
+              },
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
     }
   } catch (e) {
     setState(() => _isLoading = false);
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Error'),
+        content: Text('Verification failed: ${e.toString()}'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -228,7 +259,7 @@ Future<void> _onContinue() async {
                     SizedBox(height: screenHeight * 0.01),
                     Image.asset(
                       'images/Logo_Horizontal.png',
-                      height: screenHeight * 0.08,
+                      height: screenHeight * 0.06,
                       fit: BoxFit.contain,
                     ),
                     SizedBox(height: screenHeight * 0.08),

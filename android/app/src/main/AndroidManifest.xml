@@ -26,7 +26,7 @@
     <uses-permission android:name="android.permission.ACCESS_ADSERVICES_TOPICS" tools:node="remove"/>
 
     <application
-        android:label="Vive"
+        android:label="EcoVerse"
         android:name="android.app.Application"
         android:icon="@mipmap/ic_launcher">
         

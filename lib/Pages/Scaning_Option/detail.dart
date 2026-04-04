@@ -159,6 +159,10 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> {
     // Extract passed data safely
     final deviceName =
         widget.data["deviceName"]?.toString() ?? "Unknown Appliance";
+    final brand = widget.data["brand"]?.toString();
+    final showBrand = brand != null &&
+        brand.isNotEmpty &&
+        brand.toLowerCase() != 'unknown';
     final powerRating =
         widget.data["powerRating"]?.toString() ?? "Not provided";
     final usageHours = widget.data["usageHours"]?.toString() ?? "Not provided";
@@ -209,14 +213,29 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> {
                         ),
                       ),
                       Expanded(
-                        child: Text(
-                          deviceName,
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: screenWidth * 0.055,
-                            fontWeight: FontWeight.bold,
-                            fontFamily: 'WorkSansB',
-                          ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              deviceName,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                fontSize: screenWidth * 0.055,
+                                fontWeight: FontWeight.bold,
+                                fontFamily: 'WorkSansB',
+                              ),
+                            ),
+                            if (showBrand)
+                              Text(
+                                brand,
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: screenWidth * 0.032,
+                                  color: Colors.grey[600],
+                                  fontFamily: 'WorkSans',
+                                ),
+                              ),
+                          ],
                         ),
                       ),
                       SizedBox(width: screenWidth * 0.05),

@@ -1,5 +1,6 @@
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'dart:developer' as developer;
 import 'api_service.dart';
 import 'auth_storage.dart';
 
@@ -11,19 +12,24 @@ class GoogleAuthService {
 
   static Future<Map<String, dynamic>> signIn() async {
     try {
+      final clientId = dotenv.env['WEB_CLIENT_ID'];
+      developer.log('Google Sign-In: serverClientId=$clientId');
+      
       // Sign out first to ensure clean state
       await _googleSignIn.signOut();
       
       final googleUser = await _googleSignIn.signIn();
       if (googleUser == null) {
-        return {'success': false, 'error': 'Google sign-in was cancelled'};
+        return {'success': false, 'error': 'Google sign-in was cancelled by user'};
       }
 
+      developer.log('Google Sign-In: got user ${googleUser.email}');
+      
       final googleAuth = await googleUser.authentication;
       final idToken = googleAuth.idToken;
       
       if (idToken == null) {
-        return {'success': false, 'error': 'Failed to get Google ID token'};
+        return {'success': false, 'error': 'Failed to get Google ID token. serverClientId: $clientId'};
       }
 
       final response = await ApiService.signInWithGoogle(idToken);
@@ -65,7 +71,8 @@ class GoogleAuthService {
       await AuthStorage.setHasRegistered(true);
       
       return {'success': true};
-    } catch (e) {
+    } catch (e, stackTrace) {
+      developer.log('Google Sign-In error: $e', error: e, stackTrace: stackTrace);
       return {'success': false, 'error': 'Google sign-in error: ${e.toString()}'};
     }
   }

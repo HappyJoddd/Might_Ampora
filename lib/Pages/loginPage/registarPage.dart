@@ -127,7 +127,7 @@ Future<void> _handleRegistration() async {
                   Center(
                     child: Image.asset(
                       'images/Logo_Horizontal.png',
-                      height: screenHeight * 0.08,
+                      height: screenHeight * 0.06,
                       fit: BoxFit.contain,
                     ),
                   ),

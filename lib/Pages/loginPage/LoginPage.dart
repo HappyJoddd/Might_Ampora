@@ -36,74 +36,73 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
+  Future<void> _handleSendOtp() async {
+    final phoneNumber = _phoneController.text.trim();
 
-Future<void> _handleSendOtp() async {
-  final phoneNumber = _phoneController.text.trim();
-
-  if (phoneNumber.isEmpty || !_isPhoneValid) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Invalid Phone Number'),
-        content: const Text('Please enter a valid phone number'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
-    return;
-  }
-
-  if (!mounted) return;
-  setState(() => _isLoading = true);
-
-  try {
-    // 🔹 Step 1: Attempt to send OTP
-    final result = await ApiService.sendOtp(phoneNumber);
-    setState(() => _isLoading = false);
-
-    if (result['success'] == true) {
-      await AuthStorage.saveUserDetails(phone: phoneNumber);
-
-      // 🔹 Step 2: Check if access token already exists
-      final accessToken = await AuthStorage.getAccessToken();
-      final refreshToken = await AuthStorage.getRefreshToken();
-      final storedPhone = await AuthStorage.getUserNumber();
-
-      // If user has valid token, just go home
-      if (accessToken != null && refreshToken != null) {
-        if (!mounted) return;
-        Navigator.pushReplacementNamed(context, RouteName.home);
-        return;
-      }
-
-      // If phone matches previously stored one → old user → OTP
-      if (storedPhone == phoneNumber) {
-        await AuthStorage.setHasRegistered(true);
-        if (!mounted) return;
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => const OTPpage()),
-        );
-      } else {
-        // No phone saved → new user → registration
-        await AuthStorage.setHasRegistered(false);
-        if (!mounted) return;
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (context) => const RegisterPage()),
-        );
-      }
-    } else {
-      // Silent failure - user can try again
+    if (phoneNumber.isEmpty || !_isPhoneValid) {
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Invalid Phone Number'),
+          content: const Text('Please enter a valid phone number'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+      return;
     }
-  } catch (e) {
-    setState(() => _isLoading = false);
+
+    if (!mounted) return;
+    setState(() => _isLoading = true);
+
+    try {
+      // 🔹 Step 1: Attempt to send OTP
+      final result = await ApiService.sendOtp(phoneNumber);
+      setState(() => _isLoading = false);
+
+      if (result['success'] == true) {
+        await AuthStorage.saveUserDetails(phone: phoneNumber);
+
+        // 🔹 Step 2: Check if access token already exists
+        final accessToken = await AuthStorage.getAccessToken();
+        final refreshToken = await AuthStorage.getRefreshToken();
+        final storedPhone = await AuthStorage.getUserNumber();
+
+        // If user has valid token, just go home
+        if (accessToken != null && refreshToken != null) {
+          if (!mounted) return;
+          Navigator.pushReplacementNamed(context, RouteName.home);
+          return;
+        }
+
+        // If phone matches previously stored one → old user → OTP
+        if (storedPhone == phoneNumber) {
+          await AuthStorage.setHasRegistered(true);
+          if (!mounted) return;
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const OTPpage()),
+          );
+        } else {
+          // No phone saved → new user → registration
+          await AuthStorage.setHasRegistered(false);
+          if (!mounted) return;
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => const RegisterPage()),
+          );
+        }
+      } else {
+        // Silent failure - user can try again
+      }
+    } catch (e) {
+      setState(() => _isLoading = false);
+    }
   }
-}
 
   @override
   Widget build(BuildContext context) {
@@ -141,7 +140,9 @@ Future<void> _handleSendOtp() async {
                       SizedBox(height: screenHeight * 0.01),
                       Image.asset(
                         'images/Logo_Horizontal.png',
-                        height: isTablet ? screenHeight * 0.06 : screenHeight * 0.08,
+                        height: isTablet
+                            ? screenHeight * 0.06
+                            : screenHeight * 0.05,
                         fit: BoxFit.contain,
                       ),
                     ],
@@ -155,17 +156,33 @@ Future<void> _handleSendOtp() async {
                     asset: "images/Google.png",
                     color: Colors.white,
                     onTap: () async {
-                        setState(() => _isLoading = true);
+                      setState(() => _isLoading = true);
 
-                        final result = await GoogleAuthService.signIn();
+                      final result = await GoogleAuthService.signIn();
 
-                        if (!mounted) return;
-                        setState(() => _isLoading = false);
+                      if (!mounted) return;
+                      setState(() => _isLoading = false);
 
-                        if (result['success'] == true) {
-                          Navigator.pushReplacementNamed(context, RouteName.home);
-                        }
-                      },
+                      if (result['success'] == true) {
+                        Navigator.pushReplacementNamed(context, RouteName.home);
+                      } else {
+                        showDialog(
+                          context: context,
+                          builder: (ctx) => AlertDialog(
+                            title: const Text('Google Sign-In Failed'),
+                            content: Text(
+                              result['error']?.toString() ?? 'Unknown error',
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.of(ctx).pop(),
+                                child: const Text('OK'),
+                              ),
+                            ],
+                          ),
+                        );
+                      }
+                    },
                     screenWidth: screenWidth,
                     screenHeight: screenHeight,
                   ),
@@ -187,7 +204,10 @@ Future<void> _handleSendOtp() async {
                         setState(() => _isLoading = false);
 
                         if (result['success'] == true) {
-                          Navigator.pushReplacementNamed(context, RouteName.home);
+                          Navigator.pushReplacementNamed(
+                            context,
+                            RouteName.home,
+                          );
                         }
                       },
                       screenWidth: screenWidth,
@@ -203,8 +223,9 @@ Future<void> _handleSendOtp() async {
                         child: Divider(thickness: 1, color: Colors.grey[300]),
                       ),
                       Padding(
-                        padding:
-                            EdgeInsets.symmetric(horizontal: screenWidth * 0.04),
+                        padding: EdgeInsets.symmetric(
+                          horizontal: screenWidth * 0.04,
+                        ),
                         child: Text(
                           'or',
                           style: TextStyle(
@@ -233,20 +254,19 @@ Future<void> _handleSendOtp() async {
                       ),
                       counterText: '',
                       border: OutlineInputBorder(
-                        borderRadius:
-                            BorderRadius.circular(screenWidth * 0.03),
+                        borderRadius: BorderRadius.circular(screenWidth * 0.03),
                         borderSide: BorderSide(color: Colors.grey[300]!),
                       ),
                       enabledBorder: OutlineInputBorder(
-                        borderRadius:
-                            BorderRadius.circular(screenWidth * 0.03),
+                        borderRadius: BorderRadius.circular(screenWidth * 0.03),
                         borderSide: BorderSide(color: Colors.grey[300]!),
                       ),
                       focusedBorder: OutlineInputBorder(
-                        borderRadius:
-                            BorderRadius.circular(screenWidth * 0.03),
+                        borderRadius: BorderRadius.circular(screenWidth * 0.03),
                         borderSide: const BorderSide(
-                            color: Color(0xFF4CAF50), width: 2),
+                          color: Color(0xFF4CAF50),
+                          width: 2,
+                        ),
                       ),
                       contentPadding: EdgeInsets.symmetric(
                         vertical: screenHeight * 0.02,
@@ -255,8 +275,7 @@ Future<void> _handleSendOtp() async {
                     ),
                     initialCountryCode: 'IN',
                     style: TextStyle(fontSize: screenWidth * 0.04),
-                    dropdownTextStyle:
-                        TextStyle(fontSize: screenWidth * 0.035),
+                    dropdownTextStyle: TextStyle(fontSize: screenWidth * 0.035),
                     onChanged: (phone) {
                       setState(() {
                         _isPhoneValid = phone.completeNumber.length >= 10;
@@ -271,18 +290,21 @@ Future<void> _handleSendOtp() async {
                     width: double.infinity,
                     height: screenHeight * 0.07,
                     child: ElevatedButton(
-                      onPressed:
-                          _isPhoneValid && !_isLoading ? _handleSendOtp : null,
+                      onPressed: _isPhoneValid && !_isLoading
+                          ? _handleSendOtp
+                          : null,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: _isPhoneValid
                             ? const Color(0xFFF59E0B)
                             : Colors.grey[300],
-                        foregroundColor:
-                            _isPhoneValid ? Colors.white : Colors.grey[600],
+                        foregroundColor: _isPhoneValid
+                            ? Colors.white
+                            : Colors.grey[600],
                         elevation: _isPhoneValid ? 2 : 0,
                         shape: RoundedRectangleBorder(
-                          borderRadius:
-                              BorderRadius.circular(screenWidth * 0.1),
+                          borderRadius: BorderRadius.circular(
+                            screenWidth * 0.1,
+                          ),
                         ),
                       ),
                       child: Text(
@@ -338,9 +360,13 @@ Future<void> _handleSendOtp() async {
               asset,
               width: screenWidth * 0.06,
               height: screenWidth * 0.06,
-              color: textColor,  // tint the icon to match text color
+              color: textColor, // tint the icon to match text color
               errorBuilder: (context, error, stackTrace) {
-                return Icon(Icons.person, size: screenWidth * 0.06, color: fgColor);
+                return Icon(
+                  Icons.person,
+                  size: screenWidth * 0.06,
+                  color: fgColor,
+                );
               },
             ),
             SizedBox(width: screenWidth * 0.03),

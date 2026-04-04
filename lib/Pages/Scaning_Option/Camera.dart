@@ -5,10 +5,10 @@ import 'dart:io';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'Extradetail.dart';
-import 'package:mime/mime.dart'; // for detecting mime type
-import 'package:http_parser/http_parser.dart'; // for MediaType
-
+import 'package:mime/mime.dart';
+import 'package:http_parser/http_parser.dart';
 
 class CameraGalleryPickerPage extends StatefulWidget {
   const CameraGalleryPickerPage({Key? key}) : super(key: key);
@@ -26,77 +26,87 @@ class _CameraGalleryPickerPageState extends State<CameraGalleryPickerPage> {
   bool _isCameraInitialized = false;
   final ImagePicker _picker = ImagePicker();
 
-  // ✅ Upload function using Hugging Face backend
-Future<Map<String, dynamic>?> _uploadImage(File imageFile) async {
-  try {
-    final baseUrl = dotenv.env['BACKEND_URL'];
-    final uri = Uri.parse("$baseUrl/gadgets/recognize");
+  // ✅ Compress image to 1080p max before sending to Gemini
+  Future<File> _compressImage(File imageFile) async {
+    const int maxDimension = 1080;
+    const int quality = 85;
 
-    // ✅ Detect the MIME type (e.g., image/jpeg or image/png)
-    final mimeType = lookupMimeType(imageFile.path) ?? 'image/jpeg';
-    final request = http.MultipartRequest('POST', uri);
-
-    // ✅ Explicitly set MIME type when attaching file
-    request.files.add(
-      await http.MultipartFile.fromPath(
-        'image',
-        imageFile.path,
-        contentType: MediaType.parse(mimeType),
-      ),
+    final result = await FlutterImageCompress.compressAndGetFile(
+      imageFile.absolute.path,
+      '${imageFile.parent.path}/compressed_${DateTime.now().millisecondsSinceEpoch}.jpg',
+      minWidth: maxDimension,
+      minHeight: maxDimension,
+      quality: quality,
+      format: CompressFormat.jpeg,
+      keepExif: false,
     );
 
-    // Headers
-    request.headers.addAll({
-      'Accept': 'application/json',
-    });
-
-    final streamedResponse = await request.send();
-    final response = await http.Response.fromStream(streamedResponse);
-
-
-    if (response.statusCode == 200) {
-      return jsonDecode(response.body);
-    } else {
-      return jsonDecode(response.body);
-    }
-  } catch (e) {
-    return null;
+    // Fall back to original if compression fails
+    if (result == null) return imageFile;
+    return File(result.path);
   }
-}
+
+  // ✅ Upload function using Gemini backend
+  Future<Map<String, dynamic>?> _uploadImage(File imageFile) async {
+    try {
+      final baseUrl = dotenv.env['BACKEND_URL'];
+      final uri = Uri.parse("$baseUrl/gadgets/recognize");
+
+      // ✅ Detect the MIME type (e.g., image/jpeg or image/png)
+      final mimeType = lookupMimeType(imageFile.path) ?? 'image/jpeg';
+      final request = http.MultipartRequest('POST', uri);
+
+      // ✅ Explicitly set MIME type when attaching file
+      request.files.add(
+        await http.MultipartFile.fromPath(
+          'image',
+          imageFile.path,
+          contentType: MediaType.parse(mimeType),
+        ),
+      );
+
+      // Headers
+      request.headers.addAll({'Accept': 'application/json'});
+
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      } else {
+        return jsonDecode(response.body);
+      }
+    } catch (e) {
+      return null;
+    }
+  }
 
   Future<void> _processImage(File imageFile) async {
     setState(() => _isLoading = true);
 
-    final result = await _uploadImage(imageFile);
+    // Compress to 1080p max before sending
+    final compressedFile = await _compressImage(imageFile);
+    final result = await _uploadImage(compressedFile);
 
     setState(() => _isLoading = false);
 
     if (!mounted) return;
 
     if (result != null && result['success'] == true) {
-      // Extract mainName and confidence from result
       final data = result['data'];
-      final mainName = data['mainName'] ?? '';
-      final confidenceStr = data['confidence'] ?? '0%';
-      
-      // Parse confidence percentage (e.g., "75.50%" -> 75.50)
-      final confidenceValue = double.tryParse(
-        confidenceStr.toString().replaceAll('%', '').trim()
-      ) ?? 0.0;
+      final isElectricAppliance = data['isElectricAppliance'] as bool? ?? false;
 
-      // Check if it's "Other" or confidence is less than 60%
-      if (mainName.toLowerCase() == 'other' || confidenceValue < 60.0) {
-        _showRetryDialog(mainName, confidenceValue);
+      // If Gemini says it's not a household electric appliance, show retry dialog
+      if (!isElectricAppliance) {
+        _showRetryDialog(data['mainName']?.toString() ?? '', 0.0);
         return;
       }
 
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
-          builder: (context) => ExtraDetailPage(
-            imageFile: imageFile,
-            data: result,
-          ),
+          builder: (context) =>
+              ExtraDetailPage(imageFile: imageFile, data: result),
         ),
       );
     } else {
@@ -270,7 +280,7 @@ Future<Map<String, dynamic>?> _uploadImage(File imageFile) async {
                           child: Container(
                             padding: EdgeInsets.all(12),
                             decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha:0.4),
+                              color: Colors.black.withValues(alpha: 0.4),
                               shape: BoxShape.circle,
                             ),
                             child: Icon(
@@ -334,7 +344,8 @@ Future<Map<String, dynamic>?> _uploadImage(File imageFile) async {
                       GestureDetector(
                         onTap: () async {
                           if (_cameras != null && _cameras!.length > 1) {
-                            final currentCamera = _cameraController!.description;
+                            final currentCamera =
+                                _cameraController!.description;
                             final newCamera = _cameras!.firstWhere(
                               (camera) => camera != currentCamera,
                             );
@@ -380,7 +391,7 @@ Future<Map<String, dynamic>?> _uploadImage(File imageFile) async {
       width: screenWidth * 0.16,
       height: screenWidth * 0.16,
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha:0.3),
+        color: Colors.white.withValues(alpha: 0.3),
         shape: BoxShape.circle,
         border: Border.all(color: Colors.white, width: 3),
       ),
