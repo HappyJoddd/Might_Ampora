@@ -208,6 +208,22 @@ class _LoginPageState extends State<LoginPage> {
                             context,
                             RouteName.home,
                           );
+                        } else {
+                          showDialog(
+                            context: context,
+                            builder: (ctx) => AlertDialog(
+                              title: const Text('Apple Sign-In Failed'),
+                              content: Text(
+                                result['error']?.toString() ?? 'Unknown error',
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.of(ctx).pop(),
+                                  child: const Text('OK'),
+                                ),
+                              ],
+                            ),
+                          );
                         }
                       },
                       screenWidth: screenWidth,

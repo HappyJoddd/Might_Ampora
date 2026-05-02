@@ -46,6 +46,7 @@ class AppleAuthService {
       }
 
       // Apple only returns the name on the FIRST sign-in, so capture it.
+      // On subsequent sign-ins or when the user hides their info, these will be null.
       final fullName = _buildFullName(appleCredential);
 
       // ---------- Step 4: Authenticate with our backend ----------
@@ -70,16 +71,19 @@ class AppleAuthService {
       }
 
       // ---------- Step 5: Persist tokens & user data ----------
+      // NOTE: email and name may be null when user chose "Hide My Email"
+      // or on any sign-in after the first. We save whatever we have.
       await AuthStorage.saveTokens(
         accessToken: data['accessToken'],
         refreshToken: data['refreshToken'],
       );
 
+      final userData = data['user'] as Map<String, dynamic>;
       await AuthStorage.saveUserDetails(
-        userId: data['user']['id'],
-        name: data['user']['name'],
-        email: data['user']['email'],
-        phone: data['user']['phone'] ?? '',
+        userId: userData['id']?.toString(),
+        name: userData['name']?.toString() ?? '',
+        email: userData['email']?.toString() ?? '',
+        phone: userData['phone']?.toString() ?? '',
       );
 
       await AuthStorage.setLoggedIn(true);
